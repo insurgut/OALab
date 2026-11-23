@@ -1,10 +1,6 @@
 package ru.lisurgut.oalab
 
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,22 +33,12 @@ fun DetailScreen(
     anime: Anime,
     library: LocalLibrary,
     onBack: () -> Unit,
-    onPlay: (Int, StreamVariant) -> Unit
+    onWatch: (Int, String?) -> Unit
 ) {
     val context = LocalContext.current
-    val localPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            val direct = StreamVariant(
-                source="Локальный файл",episode=library.entry(anime)?.lastEpisode ?: 1,
-                language=library.language,team="Файл с устройства",
-                voices=1,votes=0,popularity=999,timing="Локально",
-                url=uri.toString(),subtitle=""
-            )
-            onPlay(direct.episode,direct)
-        }
-    }
     val variants = library.variantsFor(anime)
-    val availableEps = variants.map { it.episode }.distinct().sorted()
+    val availableEps = (variants.map { it.episode } +
+        (1..anime.episodes.coerceIn(1, 600)).toList()).distinct().sorted()
     var episode by remember(anime.id) {
         mutableIntStateOf(
             library.entry(anime)?.lastEpisode?.takeIf { it in availableEps }
@@ -61,11 +47,6 @@ fun DetailScreen(
     }
     var chosenUrl by remember(anime.id) { mutableStateOf<String?>(null) }
     var showVoices by remember { mutableStateOf(false) }
-    var showDirectLink by remember { mutableStateOf(false) }
-    var directUrl by remember(anime.id) { mutableStateOf("") }
-    var directEpisode by remember(anime.id) { mutableStateOf("1") }
-    var directTeam by remember(anime.id) { mutableStateOf("Мой поток") }
-    var directError by remember { mutableStateOf<String?>(null) }
     var descriptionExpanded by remember(anime.id) { mutableStateOf(false) }
     var statusMenu by remember { mutableStateOf(false) }
     val ranked = library.rankVariants(variants.filter { it.episode == episode }, library.voiceSort)
@@ -77,12 +58,12 @@ fun DetailScreen(
         contentPadding = PaddingValues(bottom = 45.dp)
     ) {
         item {
-            Box(Modifier.fillMaxWidth().height(232.dp)) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).height(216.dp).clip(RoundedCornerShape(22.dp))) {
                 Cover(anime.banner.ifBlank { anime.cover }, Modifier.fillMaxSize())
                 Box(
                     Modifier.fillMaxSize().background(
                         Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = .6f), Color.Transparent, Ink)
+                            listOf(Color.Black.copy(alpha = .15f), Color.Black.copy(alpha = .35f), Color.Black.copy(alpha = .95f))
                         )
                     )
                 )
@@ -104,10 +85,11 @@ fun DetailScreen(
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Eyebrow("OAlab / Информация")
+                        Text("OAlab / Аниме", color = Color.White.copy(alpha = .77f), fontSize = 10.sp)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             anime.title,
+                            color = Color.White,
                             fontSize = 20.sp,
                             lineHeight = 23.sp,
                             fontWeight = FontWeight.Bold,
@@ -121,7 +103,7 @@ fun DetailScreen(
                                 anime.format.takeIf { it.isNotBlank() }
                             ).joinToString(" · "),
                             fontSize = 11.sp,
-                            color = Muted
+                            color = Color.White.copy(alpha = .78f)
                         )
                     }
                 }
@@ -140,20 +122,18 @@ fun DetailScreen(
                 Spacer(Modifier.height(13.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(
-                        onClick = {
-                            if (chosen != null) onPlay(episode, chosen)
-                        },
-                        enabled = chosen != null,
+                        onClick = { onWatch(episode, chosen?.url) },
                         shape = RoundedCornerShape(17.dp),
                         modifier = Modifier.weight(1f).height(44.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Paper, contentColor = Ink,
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
                             disabledContainerColor = PanelAlt, disabledContentColor = Muted
                         )
                     ) {
                         Icon(Icons.Rounded.PlayArrow, null)
                         Spacer(Modifier.width(7.dp))
-                        Text(if (chosen == null) "Добавь источник" else "Смотреть", fontWeight = FontWeight.Bold)
+                        Text("Смотреть", fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.width(9.dp))
                     IconButton(
@@ -191,24 +171,7 @@ fun DetailScreen(
                     }
                 }
                 Spacer(Modifier.height(9.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Статус: " + status, fontSize = 12.sp, color = Muted, modifier = Modifier.weight(1f))
-                    TextButton(onClick = {
-                        directEpisode = episode.toString()
-                        directError = null
-                        showDirectLink = true
-                    }, contentPadding = PaddingValues(horizontal = 5.dp)) {
-                        Icon(Icons.Rounded.AddLink, null, modifier = Modifier.size(17.dp))
-                        Text("URL", fontSize = 12.sp)
-                    }
-                    TextButton(
-                        onClick = { localPicker.launch(arrayOf("video/*")) },
-                        contentPadding = PaddingValues(horizontal = 5.dp)
-                    ) {
-                        Icon(Icons.Rounded.FolderOpen, null, modifier = Modifier.size(17.dp))
-                        Text("Файл", fontSize = 12.sp)
-                    }
-                }
+                Text("Статус: " + status, fontSize = 12.sp, color = Muted)
             }
         }
         if (anime.description.isNotBlank()) item {
@@ -234,7 +197,7 @@ fun DetailScreen(
         }
         item {
             Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionHeader("Эпизоды", if (variants.isEmpty()) "Подключи видеокаталог в разделе «Источники»" else "Доступно: " + availableEps.size)
+                SectionHeader("Серии")
             }
         }
         if (availableEps.isNotEmpty()) item {
@@ -249,7 +212,7 @@ fun DetailScreen(
         }
         item {
             Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionHeader("Озвучка и субтитры", "Выбор до начала просмотра")
+                SectionHeader("Озвучка")
                 if (chosen != null) {
                     Row(
                         Modifier.fillMaxWidth()
@@ -289,10 +252,10 @@ fun DetailScreen(
                     ) {
                         Icon(Icons.Rounded.CloudOff, null, tint = Muted)
                         Spacer(Modifier.height(12.dp))
-                        Text("Видеопоток пока не найден", fontWeight = FontWeight.SemiBold)
+                        Text("Подбираем автоматически", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(7.dp))
                         Text(
-                            "Добавь прямую HTTPS-ссылку на серию через кнопку URL выше или подключи свой видеокаталог в «Источниках».",
+                            "Нажми «Смотреть»: приложение проверит доступные серии и запустит их внутри приложения.",
                             color = Muted, fontSize = 12.sp, lineHeight = 19.sp
                         )
                     }
@@ -316,103 +279,8 @@ fun DetailScreen(
                         Text("Скачать видео для просмотра офлайн")
                     }
                 }
-                if (anime.trailer.isNotBlank()) {
-                    Spacer(Modifier.height(16.dp))
-                    OutlinedButton(
-                        onClick = {
-                            val link = "https://www.youtube.com/watch?v=" + anime.trailer
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Edge)
-                    ) {
-                        Icon(Icons.Rounded.SmartDisplay, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Смотреть официальный трейлер")
-                    }
-                }
-                if(anime.official.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    SectionHeader("Где смотреть",
-                        "Ссылки на сервисы и серии, доступность зависит от региона")
-                    anime.official.distinctBy {it.url}.take(18).forEach {item ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(bottom=7.dp)
-                                .clip(RoundedCornerShape(15.dp)).background(Panel)
-                                .clickable {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW,Uri.parse(item.url))
-                                    )
-                                }.padding(horizontal=13.dp,vertical=12.dp),
-                            verticalAlignment=Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.OpenInNew,null,tint=Paper,
-                                modifier=Modifier.size(17.dp))
-                            Spacer(Modifier.width(9.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(item.site,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
-                                if(item.episode.isNotBlank()) {
-                                    Text(item.episode,maxLines=1,overflow=TextOverflow.Ellipsis,
-                                        color=Muted,fontSize=10.sp)
-                                }
-                            }
-                            Icon(Icons.Rounded.ChevronRight,null,tint=Muted)
-                        }
-                    }
-                }
             }
         }
-    }
-    if (showDirectLink) {
-        AlertDialog(
-            onDismissRequest = { showDirectLink = false },
-            title = { Text("Видео для серии") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("Вставь прямой адрес MP4, HLS или DASH, который можно воспроизвести без авторизации.",
-                        fontSize = 12.sp, color = Muted, lineHeight = 17.sp)
-                    OutlinedTextField(
-                        value = directUrl, onValueChange = { directUrl = it },
-                        label = { Text("HTTPS-ссылка на видео") },
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(15.dp)
-                    )
-                    OutlinedTextField(
-                        value = directEpisode, onValueChange = { directEpisode = it },
-                        label = { Text("Номер серии") },
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(15.dp)
-                    )
-                    OutlinedTextField(
-                        value = directTeam, onValueChange = { directTeam = it },
-                        label = { Text("Озвучка") },
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(15.dp)
-                    )
-                    if (directError != null) Text(directError!!,
-                        color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    try {
-                        val ep = directEpisode.toIntOrNull() ?: error("Неверный номер серии")
-                        library.addPersonalStream(anime, ep, directUrl, directTeam, library.language)
-                        episode = ep
-                        chosenUrl = directUrl.trim()
-                        directError = null
-                        showDirectLink = false
-                    } catch(e: Exception) {
-                        directError = e.localizedMessage ?: "Проверь данные"
-                    }
-                }) { Text("Сохранить") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDirectLink = false }) { Text("Отмена") }
-            },
-            containerColor = PanelAlt
-        )
     }
     if (showVoices && ranked.isNotEmpty()) {
         VoiceSelectorSheet(
