@@ -178,8 +178,7 @@ fun BottomPill(selected: Int, onSelect: (Int) -> Unit) {
         Triple("Главная", Icons.Rounded.Home, 0),
         Triple("Каталог", Icons.Rounded.Search, 1),
         Triple("Моё", Icons.Rounded.Bookmarks, 2),
-        Triple("Источники", Icons.Rounded.Dns, 3),
-        Triple("Настройки", Icons.Rounded.Settings, 4)
+        Triple("Настройки", Icons.Rounded.Settings, 3)
     )
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding()

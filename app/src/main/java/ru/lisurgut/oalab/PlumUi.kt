@@ -182,7 +182,7 @@ fun PlumHomeScreen(
                 horizontalArrangement=Arrangement.SpaceBetween) {
                 PlumMetric("Избранное",library.entries.count{it.favorite}.toString())
                 PlumMetric("Смотрю",progress.size.toString())
-                PlumMetric("Источники",library.feeds.size.toString())
+                PlumMetric("Просмотрено",library.watched().size.toString())
             }
         }
         if(error!=null)item{ErrorPanel(error,onRetry)}

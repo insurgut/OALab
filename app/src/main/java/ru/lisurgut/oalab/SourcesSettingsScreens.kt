@@ -327,7 +327,11 @@ private fun SourceProviderRow(name: String, description: String, selected: Boole
 }
 
 @Composable
-fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
+fun SettingsScreen(
+    library: LocalLibrary,
+    onReload: () -> Unit,
+    onUpdates: () -> Unit
+) {
     LazyColumn(
         Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp)
@@ -393,6 +397,22 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
             )
         }
         item {
+            SectionHeader("Приложение")
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp))
+                    .background(Panel).clickable(onClick = onUpdates).padding(15.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.SystemUpdate, null, tint = Paper)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Обновления", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Версии и список изменений", fontSize = 11.sp, color = Muted)
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+            }
+        }
+        item {
             SectionHeader("Внешний вид")
             Row(
                 Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(17.dp))
@@ -426,7 +446,7 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(23.dp))
-            Eyebrow("OAlab · 0.2.1")
+            Eyebrow("OAlab · 0.3.0")
             Spacer(Modifier.height(6.dp))
             Text(
                 "Jetpack Compose · Material 3 · Media3 ExoPlayer",

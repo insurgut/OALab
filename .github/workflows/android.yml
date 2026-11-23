@@ -52,4 +52,4 @@ jobs:
             exit 1
           fi
           cp app/build/outputs/apk/debug/app-debug.apk "OAlab-v$VERSION.apk"
-          gh release create "$TAG" "OAlab-v$VERSION.apk" --title "OAlab $VERSION" --notes "Android APK" --prerelease
+          gh release create "$TAG" "OAlab-v$VERSION.apk" "lupd.txt#lupd.txt" --title "OAlab $VERSION" --notes-file "lupd.txt" --prerelease

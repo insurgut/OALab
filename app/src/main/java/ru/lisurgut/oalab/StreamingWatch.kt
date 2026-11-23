@@ -160,7 +160,7 @@ fun WatchResolverScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Серия ${request.episode}" +
+                    "Серия " + request.episode +
                         if (pageSite.isBlank()) "" else " · " + pageSite,
                     fontSize = 11.sp, color = Muted
                 )

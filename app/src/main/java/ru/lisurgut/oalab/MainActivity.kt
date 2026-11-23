@@ -60,6 +60,15 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
     var loadError by remember { mutableStateOf<String?>(null) }
     var selectedAnime by remember { mutableStateOf<Anime?>(null) }
     var playback by remember { mutableStateOf<PlaybackRequest?>(null) }
+    var watch by remember { mutableStateOf<WatchRequest?>(null) }
+    var updatesOpen by remember { mutableStateOf(false) }
+    var updateScan by remember { mutableStateOf(UpdateScan()) }
+    var updateRefresh by remember { mutableIntStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(updateRefresh) {
+        updateScan = OAlabUpdates.check(context)
+    }
     var refreshKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(library.catalogProvider, category, sorting, search, page, fromYear, toYear, refreshKey) {
@@ -79,10 +88,14 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
         }
     }
 
-    BackHandler(enabled = playback != null || selectedAnime != null) {
-        if (playback != null) {
+    BackHandler(enabled = updatesOpen || playback != null || watch != null || selectedAnime != null) {
+        if (updatesOpen) {
+            updatesOpen = false
+        } else if (playback != null) {
             fullscreen(false)
             playback = null
+        } else if (watch != null) {
+            watch = null
         } else {
             selectedAnime = null
         }
@@ -90,11 +103,7 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
 
     val openAnime: (Anime) -> Unit = { selectedAnime = it }
     val playOrOpen: (Anime) -> Unit = { anime ->
-        val variants = library.rankVariants(library.variantsFor(anime), library.voiceSort)
-        val lastEpisode = library.entry(anime)?.lastEpisode ?: 1
-        val variant = variants.firstOrNull { it.episode == lastEpisode } ?: variants.firstOrNull()
-        if (variant != null) playback = PlaybackRequest(anime, variant.episode, variant)
-        else selectedAnime = anime
+        watch = WatchRequest(anime, library.entry(anime)?.lastEpisode ?: 1)
     }
     val showCatalogue: (String) -> Unit = {
         category = it
@@ -105,6 +114,11 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
     }
 
     when {
+        updatesOpen -> {
+            UpdatesScreen(scan = updateScan,
+                onBack = { updatesOpen = false },
+                onRescan = { updateRefresh++ })
+        }
         playback != null -> {
             val active = playback!!
             PlayerScreen(
@@ -118,14 +132,26 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
                 onSelect = { stream -> playback = active.copy(episode = stream.episode, stream = stream) }
             )
         }
+        watch != null -> {
+            val pending = watch!!
+            WatchResolverScreen(
+                request = pending,
+                library = library,
+                onBack = { watch = null },
+                onNativePlay = { stream ->
+                    watch = null
+                    playback = PlaybackRequest(pending.anime, stream.episode, stream)
+                }
+            )
+        }
         selectedAnime != null -> {
             val anime = selectedAnime!!
             DetailScreen(
                 anime = anime,
                 library = library,
                 onBack = { selectedAnime = null },
-                onPlay = { episode, stream ->
-                    playback = PlaybackRequest(anime, episode, stream)
+                onWatch = { episode, preferredUrl ->
+                    watch = WatchRequest(anime, episode, preferredUrl)
                 }
             )
         }
@@ -133,7 +159,12 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
             Scaffold(
                 containerColor = Ink,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = { BottomPill(tab) { tab = it } }
+                bottomBar = { BottomPill(tab) { tab = it } },
+                floatingActionButton = {
+                    if (updateScan.update != null) UpdateBubble {
+                        updatesOpen = true
+                    }
+                }
             ) { innerPadding ->
                 when (tab) {
                     0 -> PlumHomeScreen(
@@ -153,8 +184,10 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
                         onRetry = { refreshKey++ }
                     )
                     2 -> PlumLibraryScreen(library, openAnime, playOrOpen)
-                    3 -> SourcesScreen(library)
-                    else -> SettingsScreen(library, onReload = { refreshKey++ })
+                    else -> SettingsScreen(
+                        library = library, onReload = { refreshKey++ },
+                        onUpdates = { updatesOpen = true }
+                    )
                 }
             }
         }
