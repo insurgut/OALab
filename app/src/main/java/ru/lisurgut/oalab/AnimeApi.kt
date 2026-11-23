@@ -7,6 +7,14 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import kotlin.math.roundToInt
+
+data class OfficialWatch(val site: String, val url: String, val episode: String = "") {
+    fun toJson() = JSONObject().put("site",site).put("url",url).put("episode",episode)
+    companion object {
+        fun parse(v:JSONObject) = OfficialWatch(v.optString("site"),v.optString("url"),v.optString("episode"))
+    }
+}
 
 data class Anime(
     val id: String,
@@ -22,7 +30,8 @@ data class Anime(
     val episodes: Int = 0,
     val genres: List<String> = emptyList(),
     val format: String = "",
-    val trailer: String = ""
+    val trailer: String = "",
+    val official: List<OfficialWatch> = emptyList()
 ) {
     fun toJson() = JSONObject().apply {
         put("id", id)
@@ -39,6 +48,7 @@ data class Anime(
         put("genres", JSONArray(genres))
         put("format", format)
         put("trailer", trailer)
+        put("official", JSONArray(official.map { it.toJson() }))
     }
 
     companion object {
@@ -56,7 +66,10 @@ data class Anime(
             episodes = value.optInt("episodes"),
             genres = value.optJSONArray("genres")?.strings() ?: emptyList(),
             format = value.optString("format"),
-            trailer = value.optString("trailer")
+            trailer = value.optString("trailer"),
+            official = (value.optJSONArray("official") ?: JSONArray()).let { array ->
+                (0 until array.length()).map { OfficialWatch.parse(array.getJSONObject(it)) }
+            }
         )
     }
 }
@@ -87,13 +100,33 @@ object AnimeApi {
         query: String = "",
         category: String = "Все",
         sort: String = "Популярные",
-        page: Int = 1
+        page: Int = 1,
+        fromYear: Int? = null,
+        toYear: Int? = null
     ): List<Anime> = withContext(Dispatchers.IO) {
-        if (provider == "Jikan") jikan(query, category, sort, page)
-        else anilist(query, category, sort, page)
+        val providers = if (provider == "Авто") listOf("AniList", "Jikan", "Kitsu")
+            else listOf(provider)
+        var failure: Exception? = null
+        for (source in providers) {
+            try {
+                val result = when(source) {
+                    "Jikan" -> jikan(query,category,sort,page,fromYear,toYear)
+                    "Kitsu" -> kitsu(query,category,sort,page,fromYear,toYear)
+                    else -> anilist(query,category,sort,page,fromYear,toYear)
+                }
+                if(result.isNotEmpty()) return@withContext result
+            } catch(e: Exception) { failure = e }
+        }
+        if (failure != null) throw failure
+        emptyList()
     }
 
-    private fun anilist(query: String, category: String, sort: String, page: Int): List<Anime> {
+    private fun anilist(query: String, category: String, sort: String, page: Int, fromYear: Int?, toYear: Int?): List<Anime> {
+        val dates = listOfNotNull(
+            fromYear?.let { "startDate_greater:" + ((it - 1)*10000 + 1231) },
+            toYear?.let { "startDate_lesser:" + ((it + 1)*10000 + 101) }
+        ).joinToString(",")
+        val dateArguments = if (dates.isBlank()) "" else "," + dates
         val sortId = when (sort) {
             "В тренде" -> "TRENDING_DESC"
             "Высокий рейтинг" -> "SCORE_DESC"
@@ -104,7 +137,7 @@ object AnimeApi {
             "query", """
             query Catalog(@page:Int,@search:String,@genre:String) {
               Page(page:@page,perPage:24) {
-                media(type:ANIME,isAdult:false,sort:$sortId,search:@search,genre:@genre) {
+                media(type:ANIME,isAdult:false,sort:$sortId,search:@search,genre:@genre$dateArguments) {
                   id idMal
                   title { english romaji native }
                   coverImage { extraLarge large }
@@ -112,6 +145,8 @@ object AnimeApi {
                   description(asHtml:false)
                   seasonYear episodes averageScore format genres
                   trailer { site id }
+                  streamingEpisodes { site title url }
+                  externalLinks { site url }
                 }
               }
             }
@@ -148,16 +183,34 @@ object AnimeApi {
                 genres = item.optJSONArray("genres")?.strings() ?: emptyList(),
                 format = item.optString("format"),
                 trailer = if (trailer?.optString("site") == "youtube")
-                    trailer.optString("id") else ""
+                    trailer.optString("id") else "",
+                official = buildList {
+                    val episodes = item.optJSONArray("streamingEpisodes") ?: JSONArray()
+                    for (index in 0 until episodes.length()) {
+                        val ep = episodes.getJSONObject(index)
+                        val url = ep.optString("url")
+                        if (url.startsWith("https://")) add(
+                            OfficialWatch(ep.optString("site","Онлайн"),url,ep.optString("title"))
+                        )
+                    }
+                    val sites = item.optJSONArray("externalLinks") ?: JSONArray()
+                    for (index in 0 until sites.length()) {
+                        val link = sites.getJSONObject(index)
+                        val url = link.optString("url")
+                        if (url.startsWith("https://")) add(OfficialWatch(link.optString("site","Сервис"),url))
+                    }
+                }.distinctBy { it.url }
             )
         }
     }
 
-    private fun jikan(query: String, category: String, sort: String, page: Int): List<Anime> {
+    private fun jikan(query: String, category: String, sort: String, page: Int, fromYear: Int?, toYear: Int?): List<Anime> {
         val params = mutableListOf("page=" + page, "limit=24", "sfw=true")
         if (query.isNotBlank()) params += "q=" + URLEncoder.encode(query, "UTF-8")
         genres[category]?.second?.let { params += "genres=" + it }
-        if (query.isBlank() && category == "Все" && sort == "Популярные") {
+        fromYear?.let { params += "start_date=" + it + "-01-01" }
+        toYear?.let { params += "end_date=" + it + "-12-31" }
+        if (query.isBlank() && category == "Все" && sort == "Популярные" && fromYear == null && toYear == null) {
             // Jikan's top/anime is its stable ranked endpoint.
             val result = http("https://api.jikan.moe/v4/top/anime?" + params.joinToString("&"))
             return parseJikan(result.getJSONArray("data"))
@@ -191,8 +244,76 @@ object AnimeApi {
             episodes = item.optInt("episodes"),
             genres = (0 until genres.length()).map { genres.getJSONObject(it).optString("name") },
             format = item.optString("type"),
-            trailer = trailer?.optString("youtube_id") ?: ""
+            trailer = trailer?.optString("youtube_id") ?: "",
+            official = buildList {
+                val external = item.optJSONArray("streaming") ?: JSONArray()
+                for (i in 0 until external.length()) {
+                    val entry = external.optJSONObject(i) ?: continue
+                    val url = entry.optString("url")
+                    if (url.startsWith("https://"))
+                        add(OfficialWatch(entry.optString("name","Смотреть"),url))
+                }
+            }
         )
+    }
+
+    private fun kitsu(query: String, category: String, sort: String, page: Int, fromYear: Int?, toYear: Int?): List<Anime> {
+        val options = mutableListOf(
+            "page%5Blimit%5D=24",
+            "page%5Boffset%5D=" + (page - 1).coerceAtLeast(0) * 24,
+            "sort=" + when(sort) {
+                "Высокий рейтинг" -> "-averageRating"
+                "Новые" -> "-startDate"
+                else -> "-userCount"
+            }
+        )
+        if(query.isNotBlank()) options += "filter%5Btext%5D=" + URLEncoder.encode(query, "UTF-8")
+        val items = http("https://kitsu.io/api/edge/anime?" + options.joinToString("&")).getJSONArray("data")
+        return (0 until items.length()).mapNotNull { i ->
+            val item = items.getJSONObject(i)
+            val attributes = item.optJSONObject("attributes") ?: return@mapNotNull null
+            val id = item.optString("id")
+            val date = attributes.optString("startDate").take(4).toIntOrNull() ?: 0
+            val cover = attributes.optJSONObject("posterImage") ?: JSONObject()
+            val banner = attributes.optJSONObject("coverImage") ?: JSONObject()
+            Anime(
+                id = "kitsu:" + id,
+                title = attributes.optString("canonicalTitle").ifBlank { "Без названия" },
+                originalTitle = attributes.optJSONObject("titles")?.optString("ja_jp") ?: "",
+                description = attributes.optString("synopsis"),
+                cover = cover.optString("original"),
+                banner = banner.optString("original"),
+                score = attributes.optString("averageRating").toFloatOrNull()?.roundToInt() ?: 0,
+                year = date, episodes = attributes.optInt("episodeCount"),
+                format = attributes.optString("subtype").uppercase(),
+                official = listOf(OfficialWatch("Kitsu", "https://kitsu.app/anime/" + id))
+            )
+        }.filter { item ->
+            (fromYear == null || item.year >= fromYear) &&
+            (toYear == null || item.year <= toYear)
+        }
+    }
+
+    fun fetchText(url: String): String {
+        require(url.startsWith("https://")) { "Поддерживается только HTTPS" }
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 12000
+            connection.readTimeout = 12000
+            connection.setRequestProperty("User-Agent","OALab/0.2 Android")
+            if (connection.responseCode !in 200..299) error("HTTP " + connection.responseCode)
+            return connection.inputStream.bufferedReader().use { reader ->
+                val text = StringBuilder()
+                val chars = CharArray(4096)
+                while(true) {
+                    val count = reader.read(chars)
+                    if(count < 0) break
+                    text.append(chars,0,count)
+                    if(text.length > 3_000_000) error("Источник слишком большой (3 МБ)")
+                }
+                text.toString()
+            }
+        } finally { connection.disconnect() }
     }
 
     fun http(url: String, body: JSONObject? = null): JSONObject {
