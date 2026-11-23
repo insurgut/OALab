@@ -60,12 +60,12 @@ object OfficialPlayback {
         val id = anime.anilistId.takeIf { it > 0 }
         val malId = anime.malId.takeIf { it > 0 }
         val query = """
-            query Episodes($id:Int,$mal:Int,$search:String) {
-              Media(id:$id,idMal:$mal,search:$search,type:ANIME) {
+            query Episodes(@id:Int,@mal:Int,@search:String) {
+              Media(id:@id,idMal:@mal,search:@search,type:ANIME) {
                 streamingEpisodes { title site url }
               }
             }
-        """.trimIndent()
+        """.trimIndent().replace('@', 36.toChar())
         val args = JSONObject().apply {
             if (id != null) put("id", id)
             else if (malId != null) put("mal", malId)
