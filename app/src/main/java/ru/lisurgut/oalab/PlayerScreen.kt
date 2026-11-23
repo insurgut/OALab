@@ -1,6 +1,7 @@
 package ru.lisurgut.oalab
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -42,6 +43,9 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val player = remember { ExoPlayer.Builder(context).build() }
+    val latestRequest by rememberUpdatedState(request)
+    val latestSelect by rememberUpdatedState(onSelect)
+    val attempted = remember { mutableStateListOf<String>() }
     var current by remember { mutableLongStateOf(0L) }
     var total by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
@@ -61,12 +65,28 @@ fun PlayerScreen(
         library.voiceSort
     )
 
+    LaunchedEffect(request.anime.id, request.episode) { attempted.clear() }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) { trackVersion++ }
             override fun onPlayerError(playbackError: PlaybackException) {
-                error = playbackError.localizedMessage ?: "Не удалось воспроизвести видеопоток"
+                val active = latestRequest
+                val currentUrl = active.stream.url
+                if (!attempted.contains(currentUrl)) attempted.add(currentUrl)
+                val other = if (library.autoFallback)
+                    library.rankVariants(
+                        library.variantsFor(active.anime).filter { it.episode == active.episode },
+                        library.voiceSort
+                    ).firstOrNull { it.url != currentUrl && it.url !in attempted }
+                else null
+                if (other != null) {
+                    error = null
+                    latestSelect(other)
+                } else {
+                    error = (playbackError.localizedMessage ?: "Не удалось воспроизвести видеопоток") +
+                        if (library.autoFallback) " · Других доступных URL нет" else ""
+                }
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED && library.autoplay) {
@@ -349,6 +369,25 @@ fun PlayerScreen(
                 MetricChip("Серия " + request.episode, Icons.Rounded.Movie)
                 Spacer(Modifier.width(8.dp))
                 MetricChip(request.stream.language.uppercase(), Icons.Rounded.Language)
+                if (DownloadSupport.canDownload(request.stream)) {
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                DownloadSupport.enqueue(context,request.anime,request.stream)
+                                Toast.makeText(context,"Загрузка добавлена в очередь",Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context,e.localizedMessage ?: "Ошибка загрузки",Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        shape = RoundedCornerShape(13.dp),
+                        contentPadding = PaddingValues(horizontal = 9.dp)
+                    ) {
+                        Icon(Icons.Rounded.Download,"Скачать",Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("MP4",fontSize=11.sp)
+                    }
+                }
             }
             Spacer(Modifier.height(17.dp))
             Row(
