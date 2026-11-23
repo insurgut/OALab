@@ -51,6 +51,8 @@ data class UpdateScan(
 
 object OAlabUpdates {
     private const val RELEASES = "https://api.github.com/repos/insurgut/OALab/releases?per_page=15"
+    private const val ANONYMOUS_UPDATES = "https://insurgut.github.io/OALab/update.json"
+    private const val ANONYMOUS_BASE = "https://insurgut.github.io/OALab/"
     val changes = listOf('+', '-', '*')
 
     fun parseChangelog(raw: String): List<ChangeLine> = raw.lines()
@@ -103,6 +105,29 @@ object OAlabUpdates {
         try {
             val installed = context.packageManager.getPackageInfo(context.packageName, 0)
                 .versionName ?: "0.0.0"
+            // GitHub Pages serves only the APK and changelog, keeping source code private.
+            // If Pages is available, updates work without GitHub login.
+            try {
+                val manifest = org.json.JSONObject(getText(ANONYMOUS_UPDATES))
+                val version = manifest.optString("version")
+                val apk = manifest.optString("apk")
+                val notesUrl = manifest.optString("notes")
+                if (apk.startsWith(ANONYMOUS_BASE) && notesUrl.startsWith(ANONYMOUS_BASE)) {
+                    if (newer(version, installed)) {
+                        return@withContext UpdateScan(
+                            update = UpdateInfo(
+                                version = version,
+                                apkUrl = apk,
+                                lines = parseChangelog(getText(notesUrl))
+                            ),
+                            checked = true
+                        )
+                    }
+                    return@withContext UpdateScan(checked = true)
+                }
+            } catch (_: Exception) {
+                // Fallback for public GitHub repositories if Pages is not configured.
+            }
             val versions = JSONArray(getText(RELEASES))
             for (index in 0 until versions.length()) {
                 val item = versions.getJSONObject(index)
@@ -135,9 +160,10 @@ object OAlabUpdates {
     }
 
     fun download(context: Context, update: UpdateInfo): Long {
-        require(update.apkUrl.startsWith(
-            "https://github.com/insurgut/OALab/releases/download/"
-        )) { "Недоверенный адрес загрузки" }
+        require(
+            update.apkUrl.startsWith("https://github.com/insurgut/OALab/releases/download/") ||
+                update.apkUrl.startsWith(ANONYMOUS_BASE)
+        ) { "Недоверенный адрес загрузки" }
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val file = "OAlab-" + update.version.replace(Regex("[^0-9A-Za-z.-]"), "") + ".apk"
         return manager.enqueue(DownloadManager.Request(Uri.parse(update.apkUrl)).apply {

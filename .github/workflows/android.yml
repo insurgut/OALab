@@ -6,11 +6,16 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: https://insurgut.github.io/OALab/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
@@ -53,3 +58,29 @@ jobs:
           fi
           cp app/build/outputs/apk/debug/app-debug.apk "OAlab-v$VERSION.apk"
           gh release create "$TAG" "OAlab-v$VERSION.apk" "lupd.txt#lupd.txt" --title "OAlab $VERSION" --notes-file "lupd.txt" --prerelease
+
+      - name: Prepare public APK-only update channel
+        if: success()
+        run: |
+          VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n1)"
+          mkdir -p public-update
+          cp "OAlab-v$VERSION.apk" public-update/
+          cp lupd.txt public-update/lupd.txt
+          python3 -c 'import json,sys; v=sys.argv[1]; base="https://insurgut.github.io/OALab/"; json.dump({"version":v,"apk":base+"OAlab-v"+v+".apk","notes":base+"lupd.txt"}, open("public-update/update.json","w"))' "$VERSION"
+      - name: Try to enable public GitHub Pages from private source
+        if: success()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow || true
+      - name: Upload public update site artifact
+        if: success()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public-update
+      - name: Deploy APK update site
+        if: success()
+        continue-on-error: true
+        id: deployment
+        uses: actions/deploy-pages@v4

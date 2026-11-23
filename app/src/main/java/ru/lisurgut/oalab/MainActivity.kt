@@ -67,7 +67,10 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(updateRefresh) {
-        updateScan = OAlabUpdates.check(context)
+        while (true) {
+            updateScan = OAlabUpdates.check(context)
+            delay(6 * 60 * 60 * 1000L)
+        }
     }
     var refreshKey by remember { mutableIntStateOf(0) }
 

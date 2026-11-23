@@ -446,7 +446,7 @@ fun SettingsScreen(
                 }
             }
             Spacer(Modifier.height(23.dp))
-            Eyebrow("OAlab · 0.3.0")
+            Eyebrow("OAlab · 0.3.1")
             Spacer(Modifier.height(6.dp))
             Text(
                 "Jetpack Compose · Material 3 · Media3 ExoPlayer",
