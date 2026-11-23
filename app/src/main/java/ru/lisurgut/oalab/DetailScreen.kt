@@ -338,7 +338,7 @@ fun VoiceSelectorSheet(
                 listOf("Популярность", "Голоса", "Оценки", "Тайминги", "По алфавиту").forEach { option ->
                     FlatChip(option, order == option) {
                         order = option
-                        library.setVoiceSort(option)
+                        library.updateVoiceSort(option)
                     }
                 }
             }

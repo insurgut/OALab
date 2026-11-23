@@ -197,10 +197,10 @@ class LocalLibrary(private val context: Context) {
             .flatMap { it.anime.genres }.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.map { it.key }
 
-    fun setLanguage(value: String) { language = value; prefs.edit().putString("language", value).apply() }
+    fun updateLanguage(value: String) { language = value; prefs.edit().putString("language", value).apply() }
     fun setProvider(value: String) { catalogProvider = value; prefs.edit().putString("catalog", value).apply() }
-    fun setVoiceSort(value: String) { voiceSort = value; prefs.edit().putString("voice_sort", value).apply() }
-    fun setAutoplay(value: Boolean) { autoplay = value; prefs.edit().putBoolean("autoplay", value).apply() }
+    fun updateVoiceSort(value: String) { voiceSort = value; prefs.edit().putString("voice_sort", value).apply() }
+    fun updateAutoplay(value: Boolean) { autoplay = value; prefs.edit().putBoolean("autoplay", value).apply() }
     fun setSeek(value: Int) { seekSeconds = value; prefs.edit().putInt("seek", value).apply() }
 
     fun saveCache(list: List<Anime>) {

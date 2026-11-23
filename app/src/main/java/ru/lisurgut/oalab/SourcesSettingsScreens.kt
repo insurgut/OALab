@@ -272,7 +272,7 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 description = "Предпочтительный язык звуковой дорожки",
                 value = library.language,
                 options = listOf("ru", "ja", "en", "uk", "de", "es"),
-                onSelect = library::setLanguage
+                onSelect = library::updateLanguage
             )
             SettingSelect(
                 icon = Icons.Rounded.Sort,
@@ -280,7 +280,7 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 description = "Порядок доступных вариантов",
                 value = library.voiceSort,
                 options = listOf("Популярность", "Голоса", "Оценки", "Тайминги", "По алфавиту"),
-                onSelect = library::setVoiceSort
+                onSelect = library::updateVoiceSort
             )
         }
         item {
@@ -298,7 +298,7 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 title = "Следующая серия автоматически",
                 description = "Только если следующий поток реально найден",
                 checked = library.autoplay,
-                onChecked = library::setAutoplay
+                onChecked = library::updateAutoplay
             )
         }
         item {
