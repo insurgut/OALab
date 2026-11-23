@@ -1,5 +1,7 @@
 package ru.lisurgut.oalab
 
+import android.app.DownloadManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +25,9 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun SourcesScreen(library: LocalLibrary) {
+    val context = LocalContext.current
+    var downloadRefresh by remember { mutableIntStateOf(0) }
+    val downloads = remember(downloadRefresh) { DownloadSupport.list(context) }
     val scope = rememberCoroutineScope()
     var url by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -158,6 +163,46 @@ fun SourcesScreen(library: LocalLibrary) {
                     }
                     IconButton(onClick = { deleteTarget = feed }) {
                         Icon(Icons.Rounded.DeleteOutline, "Удалить", tint = Muted, modifier = Modifier.size(19.dp))
+                    }
+                }
+            }
+        }
+        item {
+            SectionHeader("Мои загрузки", "Прямые MP4 · доступны офлайн после завершения",
+                action = { downloadRefresh++ })
+            if(downloads.isEmpty()) {
+                Text("Загрузок нет. Открой тайтл и нажми «Скачать MP4».",
+                    color=Muted,fontSize=12.sp,modifier=Modifier.padding(bottom=12.dp))
+            } else {
+                downloads.forEach { entry ->
+                    val state = DownloadSupport.status(context,entry.id)
+                    val text = when(state) {
+                        DownloadManager.STATUS_SUCCESSFUL -> "Загружено · можно смотреть офлайн"
+                        DownloadManager.STATUS_RUNNING -> "Загружается"
+                        DownloadManager.STATUS_PENDING -> "В очереди"
+                        DownloadManager.STATUS_PAUSED -> "Пауза"
+                        DownloadManager.STATUS_FAILED -> "Не удалось скачать"
+                        else -> "Нет данных"
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom=8.dp)
+                            .background(Panel,RoundedCornerShape(17.dp)).padding(12.dp),
+                        verticalAlignment=Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Download,null,tint=Paper)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(entry.title,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                            Text("Серия "+entry.episode+" · "+text,
+                                color=Muted,fontSize=10.sp)
+                        }
+                        IconButton(onClick={
+                            DownloadSupport.remove(context,entry)
+                            downloadRefresh++
+                        }) {
+                            Icon(Icons.Rounded.DeleteOutline,"Удалить",
+                                tint=Muted,modifier=Modifier.size(19.dp))
+                        }
                     }
                 }
             }
