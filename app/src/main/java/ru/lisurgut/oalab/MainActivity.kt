@@ -3,6 +3,7 @@ package ru.lisurgut.oalab
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -64,6 +65,15 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
             if (catalog.isEmpty()) catalog = library.cachedCatalog()
         } finally {
             loading = false
+        }
+    }
+
+    BackHandler(enabled = playback != null || selectedAnime != null) {
+        if (playback != null) {
+            fullscreen(false)
+            playback = null
+        } else {
+            selectedAnime = null
         }
     }
 

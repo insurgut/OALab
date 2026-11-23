@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -38,3 +38,15 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Publish direct-download APK release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk#OALab-debug.apk"
+          if gh release view v0.1.0 >/dev/null 2>&1; then
+            gh release upload v0.1.0 "$APK" --clobber
+          else
+            gh release create v0.1.0 "$APK"               --title "OALab 0.1.0 — Android Debug APK"               --notes "Пробная сборка OALab. Каталоги AniList/Jikan, локальная библиотека, кастомный плеер. Для видео нужны разрешённые HTTPS-фиды."               --prerelease
+          fi
