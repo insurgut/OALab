@@ -59,7 +59,11 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
         loadError = null
         try {
             val result = AnimeApi.load(library.catalogProvider, search, category, sorting, page, fromYear, toYear)
-            catalog = if (page == 1) result else (catalog + result).distinctBy { it.id }
+            catalog = if (page == 1) {
+                if (search.isBlank() && category == "Все" && fromYear == null)
+                    (listOf(OpenMedia.sintel) + result).distinctBy { it.id }
+                else result
+            } else (catalog + result).distinctBy { it.id }
             if (page == 1 && search.isBlank() && category == "Все")
                 library.saveCache(result)
         } catch (error: Exception) {
