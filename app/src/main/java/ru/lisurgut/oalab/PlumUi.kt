@@ -45,12 +45,12 @@ fun PlumAnimeLine(
     modifier: Modifier = Modifier, rank: Int? = null
 ) {
     Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 7.dp),
+        Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 5.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rank != null) Text(rank.toString().padStart(2,'0'), Modifier.width(22.dp),
                 fontSize = 12.sp, color = Muted)
-            Cover(anime.cover, Modifier.size(width = 49.dp, height = 58.dp)
+            Cover(anime.cover, Modifier.size(width = 46.dp, height = 55.dp)
                 .clip(RoundedCornerShape(9.dp)), description = anime.title)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(anime.title, fontSize = 16.sp, lineHeight = 19.sp,
@@ -65,7 +65,7 @@ fun PlumAnimeLine(
                             modifier = Modifier.size(17.dp))
                 }
             }
-            Box(Modifier.size(43.dp).clip(CircleShape).background(Color(0xFF252529))
+            Box(Modifier.size(40.dp).clip(CircleShape).background(PanelAlt)
                 .clickable(onClick = onPlay), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.PlayArrow, "Смотреть", tint = Paper,
                     modifier = Modifier.size(28.dp))
@@ -141,13 +141,13 @@ fun PlumHomeScreen(
         item {
             Row(Modifier.fillMaxWidth().padding(top=9.dp,bottom=11.dp),
                 verticalAlignment=Alignment.CenterVertically) {
-                Text("OAlab",Modifier.weight(1f),fontSize=30.sp,
+                Text("OAlab",Modifier.weight(1f),fontSize=27.sp,
                     fontWeight=FontWeight.Medium, letterSpacing=(-1.2).sp)
                 IconButton(onClick=onCatalogue) {Icon(Icons.Rounded.Search,"Поиск")}
             }
         }
         if(featured!=null) item {
-            Box(Modifier.fillMaxWidth().height(173.dp).clip(RoundedCornerShape(25.dp))
+            Box(Modifier.fillMaxWidth().height(153.dp).clip(RoundedCornerShape(25.dp))
                 .background(Panel).clickable {onOpen(featured)}) {
                 Cover(featured.banner.ifBlank{featured.cover},
                     Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.6f))
@@ -159,7 +159,7 @@ fun PlumHomeScreen(
                         color=Muted,fontSize=11.sp)
                     Column {
                         Text(featured.title,maxLines=2,overflow=TextOverflow.Ellipsis,
-                            fontSize=22.sp,lineHeight=24.sp,fontWeight=FontWeight.SemiBold)
+                            fontSize=19.sp,lineHeight=23.sp,fontWeight=FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp),
                             verticalAlignment=Alignment.CenterVertically) {
@@ -170,7 +170,7 @@ fun PlumHomeScreen(
                     Button(onClick={onPlay(featured)},shape=CircleShape,
                         contentPadding=PaddingValues(horizontal=12.dp),
                         modifier=Modifier.height(35.dp),
-                        colors=ButtonDefaults.buttonColors(containerColor=Paper,contentColor=Ink)) {
+                        colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary)) {
                         Icon(Icons.Rounded.PlayArrow,null,modifier=Modifier.size(18.dp))
                         Text("Смотреть",fontSize=12.sp)
                     }
@@ -234,7 +234,10 @@ fun PlumCatalogScreen(
                     Icon(Icons.Rounded.Close,"Очистить")}}}else null,
                 colors=OutlinedTextFieldDefaults.colors(
                     focusedContainerColor=Panel,unfocusedContainerColor=Panel,
-                    focusedBorderColor=Edge,unfocusedBorderColor=Edge))
+                    focusedTextColor=MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor=MaterialTheme.colorScheme.onSurface,
+                    cursorColor=MaterialTheme.colorScheme.primary,
+                    focusedBorderColor=MaterialTheme.colorScheme.primary,unfocusedBorderColor=Edge))
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={filters=!filters}){
                     Icon(Icons.Rounded.Tune,null,Modifier.size(18.dp))

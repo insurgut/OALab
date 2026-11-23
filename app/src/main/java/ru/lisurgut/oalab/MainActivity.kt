@@ -2,6 +2,10 @@ package ru.lisurgut.oalab
 
 import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.view.View
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.material3.MaterialTheme
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -18,12 +22,17 @@ data class PlaybackRequest(val anime: Anime, val episode: Int, val stream: Strea
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(9, 9, 11)
-        window.navigationBarColor = android.graphics.Color.rgb(9, 9, 11)
-        window.decorView.systemUiVisibility = 0
         setContent {
             val library = remember { LocalLibrary(applicationContext) }
             OALabTheme {
+                val background = MaterialTheme.colorScheme.background
+                val dark = isSystemInDarkTheme()
+                SideEffect {
+                    window.statusBarColor = background.toArgb()
+                    window.navigationBarColor = background.toArgb()
+                    window.decorView.systemUiVisibility = if (dark) 0
+                        else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                }
                 OALabApp(
                     library = library,
                     fullscreen = { enabled ->
@@ -54,16 +63,12 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
     var refreshKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(library.catalogProvider, category, sorting, search, page, fromYear, toYear, refreshKey) {
-        if (search.isNotBlank()) delay(380)
         loading = true
+        delay(1_000) // Debounce searches and all filters before network request.
         loadError = null
         try {
             val result = AnimeApi.load(library.catalogProvider, search, category, sorting, page, fromYear, toYear)
-            catalog = if (page == 1) {
-                if (search.isBlank() && category == "Все" && fromYear == null)
-                    (listOf(OpenMedia.sintel) + result).distinctBy { it.id }
-                else result
-            } else (catalog + result).distinctBy { it.id }
+            catalog = if (page == 1) result else (catalog + result).distinctBy { it.id }
             if (page == 1 && search.isBlank() && category == "Все")
                 library.saveCache(result)
         } catch (error: Exception) {

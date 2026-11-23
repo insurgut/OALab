@@ -61,6 +61,7 @@ fun DetailScreen(
     }
     var chosenUrl by remember(anime.id) { mutableStateOf<String?>(null) }
     var showVoices by remember { mutableStateOf(false) }
+    var descriptionExpanded by remember(anime.id) { mutableStateOf(false) }
     var statusMenu by remember { mutableStateOf(false) }
     val ranked = library.rankVariants(variants.filter { it.episode == episode }, library.voiceSort)
     val chosen = ranked.firstOrNull { it.url == chosenUrl } ?: ranked.firstOrNull()
@@ -71,7 +72,7 @@ fun DetailScreen(
         contentPadding = PaddingValues(bottom = 45.dp)
     ) {
         item {
-            Box(Modifier.fillMaxWidth().height(290.dp)) {
+            Box(Modifier.fillMaxWidth().height(232.dp)) {
                 Cover(anime.banner.ifBlank { anime.cover }, Modifier.fillMaxSize())
                 Box(
                     Modifier.fillMaxSize().background(
@@ -88,22 +89,22 @@ fun DetailScreen(
                     Icon(Icons.Rounded.ArrowBack, "Назад", tint = Paper)
                 }
                 Row(
-                    Modifier.align(Alignment.BottomStart).padding(horizontal = 22.dp, vertical = 14.dp),
+                    Modifier.align(Alignment.BottomStart).padding(horizontal = 16.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
                     Cover(
-                        anime.cover, Modifier.width(104.dp).height(148.dp)
+                        anime.cover, Modifier.width(85.dp).height(118.dp)
                             .clip(RoundedCornerShape(17.dp))
                             .border(1.dp, Edge, RoundedCornerShape(17.dp))
                     )
-                    Spacer(Modifier.width(15.dp))
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Eyebrow("OAlab / Информация")
                         Spacer(Modifier.height(8.dp))
                         Text(
                             anime.title,
-                            fontSize = 23.sp,
-                            lineHeight = 27.sp,
+                            fontSize = 20.sp,
+                            lineHeight = 23.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis
@@ -122,7 +123,7 @@ fun DetailScreen(
             }
         }
         item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp)) {
                 Spacer(Modifier.height(13.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (anime.score > 0)
@@ -131,7 +132,7 @@ fun DetailScreen(
                         MetricChip(anime.episodes.toString() + " сер.", Icons.Rounded.Movie)
                     MetricChip(library.catalogProvider, Icons.Rounded.Public)
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(13.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(
                         onClick = {
@@ -139,7 +140,7 @@ fun DetailScreen(
                         },
                         enabled = chosen != null,
                         shape = RoundedCornerShape(17.dp),
-                        modifier = Modifier.weight(1f).height(50.dp),
+                        modifier = Modifier.weight(1f).height(44.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Paper, contentColor = Ink,
                             disabledContainerColor = PanelAlt, disabledContentColor = Muted
@@ -152,7 +153,7 @@ fun DetailScreen(
                     Spacer(Modifier.width(9.dp))
                     IconButton(
                         onClick = { library.toggleFavorite(anime) },
-                        modifier = Modifier.size(50.dp).background(PanelAlt, RoundedCornerShape(17.dp))
+                        modifier = Modifier.size(43.dp).background(PanelAlt, RoundedCornerShape(17.dp))
                     ) {
                         Icon(
                             if (library.isFavorite(anime)) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
@@ -164,7 +165,7 @@ fun DetailScreen(
                     Box {
                         IconButton(
                             onClick = { statusMenu = true },
-                            modifier = Modifier.size(50.dp).background(PanelAlt, RoundedCornerShape(17.dp))
+                            modifier = Modifier.size(43.dp).background(PanelAlt, RoundedCornerShape(17.dp))
                         ) {
                             Icon(Icons.Rounded.Checklist, "Статус", tint = Paper)
                         }
@@ -196,18 +197,20 @@ fun DetailScreen(
             }
         }
         if (anime.description.isNotBlank()) item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp)) {
                 SectionHeader("Описание")
-                Text(
-                    anime.description,
-                    color = Color(0xFFCBCBCD),
-                    fontSize = 13.sp,
-                    lineHeight = 21.sp
-                )
+                Text(anime.description,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else 5,
+                    overflow = TextOverflow.Ellipsis, fontSize = 12.sp, lineHeight = 18.sp)
+                if (anime.description.length > 260) TextButton(
+                    onClick = { descriptionExpanded = !descriptionExpanded },
+                    contentPadding = PaddingValues(horizontal = 0.dp)
+                ) { Text(if (descriptionExpanded) "Свернуть" else "Читать полностью", fontSize = 12.sp) }
             }
         }
         if (anime.genres.isNotEmpty()) item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp)) {
                 SectionHeader("Жанры")
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     anime.genres.forEach { FlatChip(it) {} }
@@ -215,7 +218,7 @@ fun DetailScreen(
             }
         }
         item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp)) {
                 SectionHeader("Эпизоды", if (variants.isEmpty()) "Подключи видеокаталог в разделе «Источники»" else "Доступно: " + availableEps.size)
             }
         }
@@ -230,7 +233,7 @@ fun DetailScreen(
             }
         }
         item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp)) {
                 SectionHeader("Озвучка и субтитры", "Выбор до начала просмотра")
                 if (chosen != null) {
                     Row(
@@ -238,11 +241,11 @@ fun DetailScreen(
                             .clip(RoundedCornerShape(18.dp))
                             .background(Panel)
                             .clickable { showVoices = true }
-                            .padding(17.dp),
+                            .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
-                            Modifier.size(43.dp).clip(RoundedCornerShape(14.dp)).background(PanelAlt),
+                            Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(PanelAlt),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(Icons.Rounded.GraphicEq, null, tint = Paper)
@@ -316,7 +319,7 @@ fun DetailScreen(
                 }
                 if(anime.official.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
-                    SectionHeader("Официальные площадки",
+                    SectionHeader("Где смотреть",
                         "Ссылки на сервисы и серии, доступность зависит от региона")
                     anime.official.distinctBy {it.url}.take(18).forEach {item ->
                         Row(
@@ -383,7 +386,7 @@ fun VoiceSelectorSheet(
         }
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 30.dp)) {
-            Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp)) {
                 Eyebrow("Настройка воспроизведения")
                 Spacer(Modifier.height(5.dp))
                 Text("Выбери озвучку", fontSize = 23.sp, fontWeight = FontWeight.Bold)

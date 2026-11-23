@@ -39,14 +39,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Publish direct-download APK release
+      - name: Publish versioned APK (keep previous releases)
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          APK="app/build/outputs/apk/debug/app-debug.apk#OALab-debug.apk"
-          if gh release view v0.1.0 >/dev/null 2>&1; then
-            gh release upload v0.1.0 "$APK" --clobber
-          else
-            gh release create v0.1.0 "$APK"               --title "OALab 0.1.0 — Android Debug APK"               --notes "Пробная сборка OALab. Каталоги AniList/Jikan, локальная библиотека, кастомный плеер. Для видео нужны разрешённые HTTPS-фиды."               --prerelease
+          VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n1)"
+          test -n "$VERSION"
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Version $TAG already published. Bump versionName to create a new release."
+            exit 1
           fi
+          cp app/build/outputs/apk/debug/app-debug.apk "OAlab-v$VERSION.apk"
+          gh release create "$TAG" "OAlab-v$VERSION.apk" --title "OAlab $VERSION" --notes "Android APK" --prerelease

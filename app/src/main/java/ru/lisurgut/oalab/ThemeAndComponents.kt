@@ -3,6 +3,9 @@ package ru.lisurgut.oalab
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.runtime.getValue
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,35 +30,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
-val Ink = Color(0xFF09090B)
-val Panel = Color(0xFF17171A)
-val PanelAlt = Color(0xFF222226)
-val Muted = Color(0xFF99999F)
-val Edge = Color(0xFF343438)
-val Paper = Color(0xFFF5F5F5)
+val Ink: Color
+    @Composable get() = MaterialTheme.colorScheme.background
+val Panel: Color
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainerLow
+val PanelAlt: Color
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
+val Muted: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+val Edge: Color
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+val Paper: Color
+    @Composable get() = MaterialTheme.colorScheme.onBackground
 
 @Composable
 fun OALabTheme(content: @Composable () -> Unit) {
-    val colors = darkColorScheme(
-        primary = Paper,
-        onPrimary = Ink,
-        primaryContainer = PanelAlt,
-        onPrimaryContainer = Paper,
-        secondary = Color(0xFFCACACC),
-        onSecondary = Ink,
-        tertiary = Color(0xFFAAAAAF),
-        onTertiary = Ink,
-        background = Ink,
-        onBackground = Paper,
-        surface = Panel,
-        onSurface = Paper,
-        surfaceVariant = PanelAlt,
-        onSurfaceVariant = Muted,
-        outline = Edge,
-        outlineVariant = Edge,
-        error = Color(0xFFFFABAB)
-    )
-    MaterialTheme(colorScheme = colors, content = content)
+    val context = LocalContext.current
+    val dark = isSystemInDarkTheme()
+    val palette = if (Build.VERSION.SDK_INT >= 31) {
+        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else if (dark) darkColorScheme() else lightColorScheme()
+    MaterialTheme(colorScheme = palette, content = content)
 }
 
 @Composable
@@ -93,11 +88,11 @@ fun Eyebrow(label: String) {
 @Composable
 fun SectionHeader(title: String, subtitle: String? = null, action: (() -> Unit)? = null) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 12.dp),
+        Modifier.fillMaxWidth().padding(top = 13.dp, bottom = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp)
             if (subtitle != null) Text(subtitle, fontSize = 12.sp, color = Muted)
         }
         if (action != null) {
@@ -200,21 +195,21 @@ fun BottomPill(selected: Int, onSelect: (Int) -> Unit) {
             tabs.forEach { (name, icon, index) ->
                 val active = selected == index
                 val background by animateColorAsState(
-                    if (active) Paper else PanelAlt, label = "Dock selection"
+                    if (active) MaterialTheme.colorScheme.primary else PanelAlt, label = "Dock selection"
                 )
                 Row(
                     Modifier.clip(CircleShape).background(background)
                         .clickable { onSelect(index) }
-                        .height(47.dp).widthIn(min = 47.dp)
+                        .height(44.dp).widthIn(min = 44.dp)
                         .padding(horizontal = if (active) 11.dp else 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(icon, if (active) null else name,
-                        tint = if (active) Ink else Muted,
+                        tint = if (active) MaterialTheme.colorScheme.onPrimary else Muted,
                         modifier = Modifier.size(20.dp))
                     AnimatedVisibility(active) {
-                        Text(name, color = Ink,
+                        Text(name, color = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.padding(start = 6.dp),
                             fontSize = 11.sp, maxLines = 1,
                             fontWeight = FontWeight.SemiBold)
@@ -231,12 +226,12 @@ fun FlatChip(label: String, selected: Boolean = false, onClick: () -> Unit) {
         selected = selected,
         onClick = onClick,
         label = { Text(label, fontSize = 12.sp, maxLines = 1) },
-        border = BorderStroke(1.dp, if (selected) Paper else Edge),
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else Edge),
         colors = FilterChipDefaults.filterChipColors(
             containerColor = Panel,
             labelColor = Muted,
-            selectedContainerColor = Paper,
-            selectedLabelColor = Ink
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
         ),
         shape = RoundedCornerShape(14.dp)
     )

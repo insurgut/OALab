@@ -59,6 +59,9 @@ fun PlayerScreen(
     var trackVersion by remember { mutableIntStateOf(0) }
     var urlBefore by remember { mutableStateOf("") }
     var episodeBefore by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(controls, request.stream.url) {
+        if (controls) { delay(4_500); controls = false }
+    }
     val sources = library.variantsFor(request.anime)
     val alternatives = library.rankVariants(
         sources.filter { it.episode == request.episode },
@@ -205,49 +208,49 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.Rounded.ArrowBack, "Назад", tint = Paper)
+                            Icon(Icons.Rounded.ArrowBack, "Назад", tint = Color.White)
                         }
                         Column(Modifier.weight(1f)) {
                             Text(
                                 request.anime.title,
-                                fontSize = 13.sp,
+                                color = Color.White, fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text("Серия " + request.episode + " · " + request.stream.team, fontSize = 10.sp, color = Muted)
+                            Text("Серия " + request.episode + " · " + request.stream.team, fontSize = 10.sp, color = Color.White.copy(alpha=.76f))
                         }
                         IconButton(onClick = { full = !full; onFullscreen(full) }) {
                             Icon(
                                 if (full) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                                "Полный экран", tint = Paper
+                                "Полный экран", tint = Color.White
                             )
                         }
                     }
                     Row(
                         Modifier.align(Alignment.Center),
-                        horizontalArrangement = Arrangement.spacedBy(22.dp),
+                        horizontalArrangement = Arrangement.spacedBy(17.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = { player.seekTo((player.currentPosition - library.seekSeconds * 1000L).coerceAtLeast(0L)) }) {
-                            Icon(Icons.Rounded.Replay10, "Назад", Modifier.size(36.dp), tint = Paper)
+                            Icon(Icons.Rounded.Replay10, "Назад", Modifier.size(32.dp), tint = Color.White)
                         }
                         IconButton(
                             onClick = { if (player.isPlaying) player.pause() else player.play() },
-                            modifier = Modifier.size(55.dp).clip(CircleShape)
-                                .background(Paper.copy(alpha = .92f))
+                            modifier = Modifier.size(47.dp).clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
                         ) {
                             Icon(
                                 if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 if (playing) "Пауза" else "Играть",
-                                Modifier.size(32.dp), tint = Ink
+                                Modifier.size(29.dp), tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                         IconButton(onClick = {
                             val target = player.currentPosition + library.seekSeconds * 1000L
                             player.seekTo(if (total > 0L) target.coerceAtMost(total) else target)
                         }) {
-                            Icon(Icons.Rounded.Forward10, "Вперёд", Modifier.size(36.dp), tint = Paper)
+                            Icon(Icons.Rounded.Forward10, "Вперёд", Modifier.size(32.dp), tint = Color.White)
                         }
                     }
                     Column(
@@ -266,15 +269,15 @@ fun PlayerScreen(
                             enabled = total > 0,
                             modifier = Modifier.fillMaxWidth().height(24.dp),
                             colors = SliderDefaults.colors(
-                                thumbColor = Paper,
-                                activeTrackColor = Paper,
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
                                 inactiveTrackColor = Muted.copy(alpha = .45f)
                             )
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 formatTime(current) + " / " + formatTime(total),
-                                fontSize = 10.sp, color = Paper,
+                                fontSize = 10.sp, color = Color.White,
                                 modifier = Modifier.weight(1f)
                             )
                             PlayerMenuButton(Icons.Rounded.GraphicEq, "Озвучка") { chooseVoice = true }
@@ -360,10 +363,10 @@ fun PlayerScreen(
                 }
             }
         }
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 19.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
             Eyebrow("Сейчас играет")
             Spacer(Modifier.height(8.dp))
-            Text(request.anime.title, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(request.anime.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines=2, overflow=TextOverflow.Ellipsis)
             Spacer(Modifier.height(9.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MetricChip("Серия " + request.episode, Icons.Rounded.Movie)
@@ -389,10 +392,10 @@ fun PlayerScreen(
                     }
                 }
             }
-            Spacer(Modifier.height(17.dp))
+            Spacer(Modifier.height(9.dp))
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel)
-                    .clickable { chooseVoice = true }.padding(17.dp),
+                    .clickable { chooseVoice = true }.padding(11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Rounded.GraphicEq, null, tint = Paper)
@@ -406,11 +409,7 @@ fun PlayerScreen(
                 }
                 Icon(Icons.Rounded.UnfoldMore, "Изменить")
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "Прогресс сохраняется локально. Переключай озвучку, субтитры и дорожки прямо во время просмотра.",
-                color = Muted, fontSize = 12.sp, lineHeight = 18.sp
-            )
+
         }
     }
     if (chooseVoice) {
@@ -434,7 +433,7 @@ private fun PlayerMenuButton(
     onClick: () -> Unit
 ) {
     IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-        Icon(icon, contentDescription = description, tint = Paper, modifier = Modifier.size(19.dp))
+        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(19.dp))
     }
 }
 

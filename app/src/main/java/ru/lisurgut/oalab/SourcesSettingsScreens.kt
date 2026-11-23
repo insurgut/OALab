@@ -101,7 +101,10 @@ fun SourcesScreen(library: LocalLibrary) {
                     shape = RoundedCornerShape(15.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedBorderColor = Edge,
-                        focusedBorderColor = Paper
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        cursorColor = MaterialTheme.colorScheme.primary
                     )
                 )
                 Spacer(Modifier.height(10.dp))
@@ -110,7 +113,7 @@ fun SourcesScreen(library: LocalLibrary) {
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(15.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Paper, contentColor = Ink)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                 ) {
                     if (busy) CircularProgressIndicator(
                         Modifier.size(17.dp), color = Ink, strokeWidth = 2.dp
@@ -371,8 +374,8 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 Icon(Icons.Rounded.Palette, null, tint = Paper)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Монохромная тема", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text("Чёрный, белый, серые. Без динамических цветов.", fontSize = 11.sp, color = Muted)
+                    Text("Monet · цвета обоев", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("Динамическая тема Android 12+; светлая или тёмная по системе.", fontSize = 11.sp, color = Muted)
                 }
                 Icon(Icons.Rounded.CheckCircle, null, tint = Paper)
             }
@@ -395,7 +398,7 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(23.dp))
-            Eyebrow("OAlab · 0.1.0")
+            Eyebrow("OAlab · 0.2.0")
             Spacer(Modifier.height(6.dp))
             Text(
                 "Jetpack Compose · Material 3 · Media3 ExoPlayer",
@@ -430,8 +433,8 @@ private fun SettingsSwitch(
             checked = checked,
             onCheckedChange = onChecked,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Ink,
-                checkedTrackColor = Paper,
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
                 uncheckedThumbColor = Muted,
                 uncheckedTrackColor = Edge
             )

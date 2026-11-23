@@ -282,7 +282,7 @@ class LocalLibrary(private val context: Context) {
     }
 
     fun variantsFor(anime: Anime): List<StreamVariant> =
-        (DownloadSupport.offlineFor(context,anime) + OpenMedia.streamsFor(anime) + feeds.flatMap { it.forAnime(anime) })
+        (DownloadSupport.offlineFor(context,anime) + feeds.flatMap { it.forAnime(anime) })
             .distinctBy { it.episode.toString() + "|" + it.url }
 
     fun rankVariants(streams: List<StreamVariant>, order: String): List<StreamVariant> {
