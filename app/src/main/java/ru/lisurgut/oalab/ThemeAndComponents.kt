@@ -1,5 +1,7 @@
 package ru.lisurgut.oalab
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -176,7 +178,7 @@ fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: Str
 
 @Composable
 fun BottomPill(selected: Int, onSelect: (Int) -> Unit) {
-    val items = listOf(
+    val tabs = listOf(
         Triple("Главная", Icons.Rounded.Home, 0),
         Triple("Каталог", Icons.Rounded.Search, 1),
         Triple("Моё", Icons.Rounded.Bookmarks, 2),
@@ -185,37 +187,37 @@ fun BottomPill(selected: Int, onSelect: (Int) -> Unit) {
     )
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding()
-            .padding(horizontal = 15.dp, vertical = 9.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
-            Modifier.fillMaxWidth()
-                .shadow(18.dp, RoundedCornerShape(40.dp))
-                .clip(RoundedCornerShape(40.dp))
-                .border(BorderStroke(1.dp, Edge), RoundedCornerShape(40.dp))
-                .background(Color(0xF9222225))
-                .padding(horizontal = 7.dp, vertical = 8.dp),
+            Modifier.shadow(12.dp, CircleShape)
+                .clip(CircleShape).border(1.dp, Edge, CircleShape)
+                .background(PanelAlt).padding(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            items.forEach { (label, icon, number) ->
-                val active = selected == number
-                Column(
-                    Modifier.weight(1f).height(54.dp)
-                        .clip(RoundedCornerShape(25.dp))
-                        .background(if (active) Paper else Color.Transparent)
-                        .clickable { onSelect(number) },
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
+            tabs.forEach { (name, icon, index) ->
+                val active = selected == index
+                val background by animateColorAsState(
+                    if (active) Paper else PanelAlt, label = "Dock selection"
+                )
+                Row(
+                    Modifier.clip(CircleShape).background(background)
+                        .clickable { onSelect(index) }
+                        .height(47.dp).widthIn(min = 47.dp)
+                        .padding(horizontal = if (active) 11.dp else 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(icon, label, tint = if (active) Ink else Muted, modifier = Modifier.size(21.dp))
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        label,
-                        fontSize = 9.sp,
-                        maxLines = 1,
-                        color = if (active) Ink else Muted,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
-                    )
+                    Icon(icon, if (active) null else name,
+                        tint = if (active) Ink else Muted,
+                        modifier = Modifier.size(20.dp))
+                    AnimatedVisibility(active) {
+                        Text(name, color = Ink,
+                            modifier = Modifier.padding(start = 6.dp),
+                            fontSize = 11.sp, maxLines = 1,
+                            fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
