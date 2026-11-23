@@ -39,7 +39,7 @@ fun SourcesScreen(library: LocalLibrary) {
         message = ""
         scope.launch {
             try {
-                val raw = withContext(Dispatchers.IO) { AnimeApi.http(address).toString() }
+                val raw = withContext(Dispatchers.IO) { AnimeApi.fetchText(address) }
                 val feed = withContext(Dispatchers.IO) { library.putFeed(address, raw) }
                 message = "Добавлен «" + feed.name + "»: " + feed.count + " тайтлов"
                 url = ""
@@ -80,10 +80,10 @@ fun SourcesScreen(library: LocalLibrary) {
             ) {
                 Eyebrow("Подключить видеокаталог")
                 Spacer(Modifier.height(9.dp))
-                Text("Импорт из HTTPS JSON", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Импорт JSON / M3U", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "OAlab принимает фиды с сериями, языками, озвучками, рейтингами и URL видео. Количество фидов не ограничено.",
+                    "OAlab принимает HTTPS JSON и M3U-плейлисты с сериями, языками и озвучками. При сбое потока автоматически пробует другой доступный вариант.",
                     color = Muted, fontSize = 12.sp, lineHeight = 18.sp
                 )
                 Spacer(Modifier.height(13.dp))
@@ -91,7 +91,7 @@ fun SourcesScreen(library: LocalLibrary) {
                     value = url,
                     onValueChange = { url = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("https://example.org/oalab.json", fontSize = 12.sp, color = Muted) },
+                    placeholder = { Text("https://example.org/anime.m3u", fontSize = 12.sp, color = Muted) },
                     singleLine = true,
                     shape = RoundedCornerShape(15.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -130,7 +130,7 @@ fun SourcesScreen(library: LocalLibrary) {
                 EmptyState(
                     Icons.Rounded.Dns,
                     "Источников пока нет",
-                    "Добавь HTTPS JSON-фид. Каталоги AniList/Jikan сами по себе не содержат видео."
+                    "Добавь HTTPS JSON или M3U-фид. AniList, Jikan и Kitsu предоставляют каталог, а не сами серии."
                 )
             }
         } else {
@@ -164,12 +164,20 @@ fun SourcesScreen(library: LocalLibrary) {
         }
         item {
             SectionHeader("Каталоги аниме", "Без регистрации · не содержат видеопотоки")
-            SourceProviderRow("AniList", "GraphQL · каталог, рейтинги, обложки", library.catalogProvider == "AniList") {
+            SourceProviderRow("Авто", "AniList → Jikan → Kitsu при ошибке", library.catalogProvider == "Авто") {
+                library.setProvider("Авто")
+            }
+            Spacer(Modifier.height(9.dp))
+            SourceProviderRow("AniList", "GraphQL · каталог и ссылки на официальные серии", library.catalogProvider == "AniList") {
                 library.setProvider("AniList")
             }
             Spacer(Modifier.height(9.dp))
             SourceProviderRow("Jikan", "MyAnimeList · публичный REST API", library.catalogProvider == "Jikan") {
                 library.setProvider("Jikan")
+            }
+            Spacer(Modifier.height(9.dp))
+            SourceProviderRow("Kitsu", "Альтернативный каталог · без регистрации", library.catalogProvider == "Kitsu") {
+                library.setProvider("Kitsu")
             }
             Spacer(Modifier.height(120.dp))
         }
@@ -198,7 +206,7 @@ fun SourcesScreen(library: LocalLibrary) {
             title = { Text("Формат видеокаталога") },
             text = {
                 Text(
-                    "JSON: name, entries[].anilistId / malId / title, entries[].episodes[].number, streams[].url, team, language, voices, votes, popularity, timing и subtitle. Пример — в README репозитория.",
+                    "JSON: name, entries[].anilistId/malId/title, episodes[].number, streams[].url/team/language/voices/votes/popularity/timing/subtitle. Также поддерживается M3U с #EXTINF, атрибутами anime, anilist-id, mal-id, episode, team, language. Примеры в README.",
                     fontSize = 12.sp, lineHeight = 19.sp
                 )
             },
@@ -263,8 +271,15 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 title = "Каталог метаданных",
                 description = "Источники названий, постеров и описаний",
                 value = library.catalogProvider,
-                options = listOf("AniList", "Jikan"),
+                options = listOf("Авто", "AniList", "Jikan", "Kitsu"),
                 onSelect = { library.setProvider(it); onReload() }
+            )
+            SettingsSwitch(
+                icon = Icons.Rounded.Sync,
+                title = "Автопереключение при ошибке",
+                description = "Перебрать другие найденные потоки серии, сохранив время",
+                checked = library.autoFallback,
+                onChecked = library::updateAutoFallback
             )
             SettingSelect(
                 icon = Icons.Rounded.Translate,
