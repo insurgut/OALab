@@ -102,9 +102,9 @@ object AnimeApi {
         }
         val request = JSONObject().put(
             "query", """
-            query Catalog($page:Int,$search:String,$genre:String) {
-              Page(page:$page,perPage:24) {
-                media(type:ANIME,isAdult:false,sort:$sortId,search:$search,genre:$genre) {
+            query Catalog(@page:Int,@search:String,@genre:String) {
+              Page(page:@page,perPage:24) {
+                media(type:ANIME,isAdult:false,sort:$sortId,search:@search,genre:@genre) {
                   id idMal
                   title { english romaji native }
                   coverImage { extraLarge large }
@@ -115,7 +115,7 @@ object AnimeApi {
                 }
               }
             }
-            """.trimIndent()
+            """.trimIndent().replace('@', 36.toChar())
         )
         request.put("variables", JSONObject().apply {
             put("page", page)
