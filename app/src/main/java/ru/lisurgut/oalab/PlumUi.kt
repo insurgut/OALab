@@ -146,7 +146,7 @@ fun PlumHomeScreen(
                 IconButton(onClick=onCatalogue) {Icon(Icons.Rounded.Search,"Поиск")}
             }
         }
-        if(feature!=null) item {
+        if(featured!=null) item {
             Box(Modifier.fillMaxWidth().height(173.dp).clip(RoundedCornerShape(25.dp))
                 .background(Panel).clickable {onOpen(featured)}) {
                 Cover(featured.banner.ifBlank{featured.cover},
