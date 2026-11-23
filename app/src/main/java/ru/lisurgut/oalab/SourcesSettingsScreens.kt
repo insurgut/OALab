@@ -1,0 +1,424 @@
+package ru.lisurgut.oalab
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+fun SourcesScreen(library: LocalLibrary) {
+    val scope = rememberCoroutineScope()
+    var url by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<SourceFeed?>(null) }
+    var showFormat by remember { mutableStateOf(false) }
+
+    fun loadFeed(address: String) {
+        if (!address.startsWith("https://")) {
+            message = "Укажи полный HTTPS URL JSON-фида"
+            return
+        }
+        busy = true
+        message = ""
+        scope.launch {
+            try {
+                val raw = withContext(Dispatchers.IO) { AnimeApi.http(address).toString() }
+                val feed = withContext(Dispatchers.IO) { library.putFeed(address, raw) }
+                message = "Добавлен «" + feed.name + "»: " + feed.count + " тайтлов"
+                url = ""
+            } catch (e: Exception) {
+                message = "Ошибка импорта: " + (e.localizedMessage ?: "неизвестно")
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp)
+    ) {
+        item {
+            Eyebrow("Система источников")
+            Spacer(Modifier.height(5.dp))
+            Text("Источники", fontSize = 31.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(9.dp))
+            Text(
+                "Объединяй эпизоды и озвучки из собственных разрешённых видеокаталогов без аккаунта.",
+                color = Muted, fontSize = 13.sp, lineHeight = 20.sp
+            )
+            Spacer(Modifier.height(20.dp))
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) { SourceStat("Активные фиды", library.feeds.size.toString()) }
+                Box(Modifier.weight(1f)) { SourceStat("Тайтлы", library.feeds.sumOf { it.count }.toString()) }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        item {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+                    .background(Panel).padding(17.dp)
+            ) {
+                Eyebrow("Подключить видеокаталог")
+                Spacer(Modifier.height(9.dp))
+                Text("Импорт из HTTPS JSON", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "OAlab принимает фиды с сериями, языками, озвучками, рейтингами и URL видео. Количество фидов не ограничено.",
+                    color = Muted, fontSize = 12.sp, lineHeight = 18.sp
+                )
+                Spacer(Modifier.height(13.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("https://example.org/oalab.json", fontSize = 12.sp, color = Muted) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(15.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Edge,
+                        focusedBorderColor = Paper
+                    )
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = { loadFeed(url.trim()) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(15.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Paper, contentColor = Ink)
+                ) {
+                    if (busy) CircularProgressIndicator(
+                        Modifier.size(17.dp), color = Ink, strokeWidth = 2.dp
+                    ) else Icon(Icons.Rounded.Add, null)
+                    Spacer(Modifier.width(7.dp))
+                    Text(if (busy) "Импортируем…" else "Добавить источник", fontWeight = FontWeight.Bold)
+                }
+                if (message.isNotBlank()) {
+                    Spacer(Modifier.height(9.dp))
+                    Text(message, color = Paper, fontSize = 12.sp)
+                }
+                TextButton(onClick = { showFormat = true }) {
+                    Icon(Icons.Rounded.Code, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Формат источника", fontSize = 12.sp)
+                }
+            }
+        }
+        item { SectionHeader("Мои видеоисточники", "Каждый фид можно обновить или удалить") }
+        if (library.feeds.isEmpty()) {
+            item {
+                EmptyState(
+                    Icons.Rounded.Dns,
+                    "Источников пока нет",
+                    "Добавь HTTPS JSON-фид. Каталоги AniList/Jikan сами по себе не содержат видео."
+                )
+            }
+        } else {
+            items(library.feeds, key = { it.url }) { feed ->
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 9.dp)
+                        .background(Panel, RoundedCornerShape(17.dp)).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(43.dp).background(PanelAlt, RoundedCornerShape(13.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Dns, null, tint = Paper, modifier = Modifier.size(21.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(feed.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(feed.count.toString() + " тайтлов · " + feed.url,
+                            fontSize = 10.sp, color = Muted, maxLines = 2)
+                    }
+                    IconButton(onClick = { loadFeed(feed.url) }, enabled = !busy) {
+                        Icon(Icons.Rounded.Refresh, "Обновить", tint = Paper, modifier = Modifier.size(19.dp))
+                    }
+                    IconButton(onClick = { deleteTarget = feed }) {
+                        Icon(Icons.Rounded.DeleteOutline, "Удалить", tint = Muted, modifier = Modifier.size(19.dp))
+                    }
+                }
+            }
+        }
+        item {
+            SectionHeader("Каталоги аниме", "Без регистрации · не содержат видеопотоки")
+            SourceProviderRow("AniList", "GraphQL · каталог, рейтинги, обложки", library.catalogProvider == "AniList") {
+                library.setProvider("AniList")
+            }
+            Spacer(Modifier.height(9.dp))
+            SourceProviderRow("Jikan", "MyAnimeList · публичный REST API", library.catalogProvider == "Jikan") {
+                library.setProvider("Jikan")
+            }
+            Spacer(Modifier.height(120.dp))
+        }
+    }
+
+    if (deleteTarget != null) {
+        val feed = deleteTarget!!
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Удалить источник?") },
+            text = { Text("Фид «" + feed.name + "» и его сохранённый кэш будут удалены с устройства.") },
+            confirmButton = {
+                TextButton(onClick = { library.removeFeed(feed); deleteTarget = null }) {
+                    Text("Удалить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Отмена") }
+            },
+            containerColor = PanelAlt
+        )
+    }
+    if (showFormat) {
+        AlertDialog(
+            onDismissRequest = { showFormat = false },
+            title = { Text("Формат видеокаталога") },
+            text = {
+                Text(
+                    "JSON: name, entries[].anilistId / malId / title, entries[].episodes[].number, streams[].url, team, language, voices, votes, popularity, timing и subtitle. Пример — в README репозитория.",
+                    fontSize = 12.sp, lineHeight = 19.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showFormat = false }) { Text("Понятно") }
+            },
+            containerColor = PanelAlt
+        )
+    }
+}
+
+@Composable
+private fun SourceStat(label: String, count: String) {
+    Column(
+        Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(19.dp))
+            .padding(17.dp)
+    ) {
+        Text(count, fontSize = 31.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = Muted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun SourceProviderRow(name: String, description: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(17.dp))
+            .clickable(onClick = onSelect).padding(15.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Rounded.Public, null, tint = Paper)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, fontWeight = FontWeight.SemiBold)
+            Text(description, fontSize = 11.sp, color = Muted)
+        }
+        Icon(
+            if (selected) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
+            "Выбрать", tint = if (selected) Paper else Muted
+        )
+    }
+}
+
+@Composable
+fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp)
+    ) {
+        item {
+            Eyebrow("Только твоё")
+            Spacer(Modifier.height(5.dp))
+            Text("Настройки", fontSize = 31.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("Управляй просмотром, озвучками и оформлением.", color = Muted, fontSize = 13.sp)
+            Spacer(Modifier.height(15.dp))
+        }
+        item {
+            SectionHeader("Каталог и рекомендации")
+            SettingSelect(
+                icon = Icons.Rounded.Dns,
+                title = "Каталог метаданных",
+                description = "Источники названий, постеров и описаний",
+                value = library.catalogProvider,
+                options = listOf("AniList", "Jikan"),
+                onSelect = { library.setProvider(it); onReload() }
+            )
+            SettingSelect(
+                icon = Icons.Rounded.Translate,
+                title = "Язык по умолчанию",
+                description = "Предпочтительный язык звуковой дорожки",
+                value = library.language,
+                options = listOf("ru", "ja", "en", "uk", "de", "es"),
+                onSelect = library::setLanguage
+            )
+            SettingSelect(
+                icon = Icons.Rounded.Sort,
+                title = "Приоритет озвучек",
+                description = "Порядок доступных вариантов",
+                value = library.voiceSort,
+                options = listOf("Популярность", "Голоса", "Оценки", "Тайминги", "По алфавиту"),
+                onSelect = library::setVoiceSort
+            )
+        }
+        item {
+            SectionHeader("Плеер")
+            SettingSelect(
+                icon = Icons.Rounded.FastForward,
+                title = "Шаг перемотки",
+                description = "Сколько секунд пропускать по кнопке",
+                value = library.seekSeconds.toString() + " секунд",
+                options = listOf("5 секунд", "10 секунд", "15 секунд", "30 секунд"),
+                onSelect = { library.setSeek(it.substringBefore(" ").toInt()) }
+            )
+            SettingsSwitch(
+                icon = Icons.Rounded.SkipNext,
+                title = "Следующая серия автоматически",
+                description = "Только если следующий поток реально найден",
+                checked = library.autoplay,
+                onChecked = library::setAutoplay
+            )
+        }
+        item {
+            SectionHeader("Внешний вид")
+            Row(
+                Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(17.dp))
+                    .padding(15.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.Palette, null, tint = Paper)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Монохромная тема", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("Чёрный, белый, серые. Без динамических цветов.", fontSize = 11.sp, color = Muted)
+                }
+                Icon(Icons.Rounded.CheckCircle, null, tint = Paper)
+            }
+        }
+        item {
+            SectionHeader("Конфиденциальность")
+            Row(
+                Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(17.dp))
+                    .padding(15.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(Icons.Rounded.Lock, null, tint = Paper)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Без аккаунтов", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(
+                        "Избранное, статусы, импортированные источники и прогресс хранятся на телефоне. Онлайн запросы нужны только для каталога и выбранного видео.",
+                        fontSize = 11.sp, color = Muted, lineHeight = 17.sp
+                    )
+                }
+            }
+            Spacer(Modifier.height(23.dp))
+            Eyebrow("OAlab · 0.1.0")
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Jetpack Compose · Material 3 · Media3 ExoPlayer",
+                color = Muted, fontSize = 11.sp
+            )
+            Spacer(Modifier.height(115.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingsSwitch(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    checked: Boolean,
+    onChecked: (Boolean) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 9.dp)
+            .background(Panel, RoundedCornerShape(17.dp)).padding(15.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = Paper)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(description, fontSize = 11.sp, color = Muted, lineHeight = 16.sp)
+        }
+        Spacer(Modifier.width(10.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onChecked,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Ink,
+                checkedTrackColor = Paper,
+                uncheckedThumbColor = Muted,
+                uncheckedTrackColor = Edge
+            )
+        )
+    }
+}
+
+@Composable
+private fun SettingSelect(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    value: String,
+    options: List<String>,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(Modifier.padding(bottom = 9.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp))
+                .background(Panel).clickable { expanded = true }.padding(15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = Paper)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(description, fontSize = 11.sp, color = Muted, lineHeight = 16.sp)
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(value, color = Muted, fontSize = 11.sp)
+            Icon(Icons.Rounded.ExpandMore, null, tint = Muted, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = PanelAlt
+        ) {
+            options.forEach {
+                DropdownMenuItem(
+                    text = { Text(it) },
+                    onClick = { onSelect(it); expanded = false },
+                    leadingIcon = {
+                        if (it == value) Icon(Icons.Rounded.Check, null)
+                    }
+                )
+            }
+        }
+    }
+}
