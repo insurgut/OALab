@@ -71,6 +71,7 @@ data class SourceFeed(
 
     companion object {
         fun parse(url: String, raw: String): SourceFeed {
+            if (raw.trimStart().startsWith("#EXTM3U")) return parseM3u(url,raw)
             val root = JSONObject(raw)
             val name = root.optString("name").ifBlank { URLName(url) }
             val items = root.optJSONArray("entries")
@@ -116,6 +117,45 @@ data class SourceFeed(
             }
             return SourceFeed(url, name, entries)
         }
+        private fun parseM3u(url: String, raw: String): SourceFeed {
+            val feedName = URLName(url)
+            val aggregate = linkedMapOf<String, MutableList<StreamVariant>>()
+            val info = linkedMapOf<String, Triple<Int,Int,String>>()
+            val lines = raw.lines()
+            for (i in lines.indices) {
+                val line = lines[i].trim()
+                if (!line.startsWith("#EXTINF:")) continue
+                val streamUrl = lines.drop(i+1).firstOrNull {
+                    it.isNotBlank() && !it.trim().startsWith("#")
+                }?.trim() ?: continue
+                if(!streamUrl.startsWith("https://")) continue
+                val attrs = mutableMapOf<String,String>()
+                val attributePattern = Regex("([a-zA-Z-]+)=\\\"([^\\\"]*)\\\"")
+                attributePattern.findAll(line).forEach { attrs[it.groupValues[1]] = it.groupValues[2] }
+                val title = attrs["anime"] ?: attrs["group-title"] ?: line.substringAfterLast(",","")
+                if(title.isBlank()) continue
+                val mal = attrs["mal-id"]?.toIntOrNull() ?: 0
+                val ani = attrs["anilist-id"]?.toIntOrNull() ?: 0
+                val episode = attrs["episode"]?.toIntOrNull() ?: 1
+                val key = (if(ani>0)"a:"+ani else if(mal>0)"m:"+mal else "t:"+title.lowercase())
+                aggregate.getOrPut(key){ mutableListOf() }.add(StreamVariant(
+                    source=feedName,episode=episode,language=attrs["language"] ?: "ja",
+                    team=attrs["team"] ?: "Оригинал",
+                    voices=attrs["voices"]?.toIntOrNull() ?: 1,
+                    votes=attrs["votes"]?.toIntOrNull() ?: 0,
+                    popularity=attrs["popularity"]?.toIntOrNull() ?: 0,
+                    timing=attrs["timing"] ?: "не указано",
+                    url=streamUrl,subtitle=attrs["subtitle"]?.takeIf{it.startsWith("https://")} ?: ""
+                ))
+                info[key] = Triple(ani,mal,title)
+            }
+            val entries = aggregate.map { (key, variants) ->
+                val (ani,mal,title) = info.getValue(key)
+                SourceEntry(ani,mal,title,variants)
+            }
+            return SourceFeed(url,feedName,entries)
+        }
+
         private fun URLName(url: String): String =
             try { java.net.URL(url).host } catch (_: Exception) { "Мой источник" }
     }
@@ -129,9 +169,11 @@ class LocalLibrary(private val context: Context) {
     val feeds = mutableStateListOf<SourceFeed>()
     var language by mutableStateOf(prefs.getString("language", "ru") ?: "ru")
         private set
-    var catalogProvider by mutableStateOf(prefs.getString("catalog", "AniList") ?: "AniList")
+    var catalogProvider by mutableStateOf(prefs.getString("catalog", "Авто") ?: "Авто")
         private set
     var voiceSort by mutableStateOf(prefs.getString("voice_sort", "Популярность") ?: "Популярность")
+        private set
+    var autoFallback by mutableStateOf(prefs.getBoolean("auto_fallback", true))
         private set
     var autoplay by mutableStateOf(prefs.getBoolean("autoplay", false))
         private set
@@ -200,6 +242,10 @@ class LocalLibrary(private val context: Context) {
     fun updateLanguage(value: String) { language = value; prefs.edit().putString("language", value).apply() }
     fun setProvider(value: String) { catalogProvider = value; prefs.edit().putString("catalog", value).apply() }
     fun updateVoiceSort(value: String) { voiceSort = value; prefs.edit().putString("voice_sort", value).apply() }
+    fun updateAutoFallback(value: Boolean) {
+        autoFallback = value
+        prefs.edit().putBoolean("auto_fallback",value).apply()
+    }
     fun updateAutoplay(value: Boolean) { autoplay = value; prefs.edit().putBoolean("autoplay", value).apply() }
     fun setSeek(value: Int) { seekSeconds = value; prefs.edit().putInt("seek", value).apply() }
 
