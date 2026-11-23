@@ -2,6 +2,9 @@ package ru.lisurgut.oalab
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,6 +40,17 @@ fun DetailScreen(
     onPlay: (Int, StreamVariant) -> Unit
 ) {
     val context = LocalContext.current
+    val localPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val direct = StreamVariant(
+                source="Локальный файл",episode=library.entry(anime)?.lastEpisode ?: 1,
+                language=library.language,team="Файл с устройства",
+                voices=1,votes=0,popularity=999,timing="Локально",
+                url=uri.toString(),subtitle=""
+            )
+            onPlay(direct.episode,direct)
+        }
+    }
     val variants = library.variantsFor(anime)
     val availableEps = variants.map { it.episode }.distinct().sorted()
     var episode by remember(anime.id) {
@@ -170,8 +184,15 @@ fun DetailScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(11.dp))
-                Text("Статус: " + status, fontSize = 12.sp, color = Muted)
+                Spacer(Modifier.height(9.dp))
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                    Text("Статус: " + status,fontSize=12.sp,color=Muted,modifier=Modifier.weight(1f))
+                    TextButton(onClick={localPicker.launch(arrayOf("video/*"))}) {
+                        Icon(Icons.Rounded.FolderOpen,null,modifier=Modifier.size(17.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Файл с телефона",fontSize=12.sp)
+                    }
+                }
             }
         }
         if (anime.description.isNotBlank()) item {
@@ -258,6 +279,25 @@ fun DetailScreen(
                         )
                     }
                 }
+                if (chosen != null && DownloadSupport.canDownload(chosen)) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                DownloadSupport.enqueue(context,anime,chosen)
+                                Toast.makeText(context,"Начата загрузка MP4",Toast.LENGTH_SHORT).show()
+                            } catch(e:Exception) {
+                                Toast.makeText(context,e.localizedMessage ?: "Ошибка загрузки",Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),
+                        border=BorderStroke(1.dp,Edge)
+                    ) {
+                        Icon(Icons.Rounded.Download,null)
+                        Spacer(Modifier.width(7.dp))
+                        Text("Скачать видео для просмотра офлайн")
+                    }
+                }
                 if (anime.trailer.isNotBlank()) {
                     Spacer(Modifier.height(16.dp))
                     OutlinedButton(
@@ -272,6 +312,35 @@ fun DetailScreen(
                         Icon(Icons.Rounded.SmartDisplay, null)
                         Spacer(Modifier.width(8.dp))
                         Text("Смотреть официальный трейлер")
+                    }
+                }
+                if(anime.official.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    SectionHeader("Официальные площадки",
+                        "Ссылки на сервисы и серии, доступность зависит от региона")
+                    anime.official.distinctBy {it.url}.take(18).forEach {item ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom=7.dp)
+                                .clip(RoundedCornerShape(15.dp)).background(Panel)
+                                .clickable {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW,Uri.parse(item.url))
+                                    )
+                                }.padding(horizontal=13.dp,vertical=12.dp),
+                            verticalAlignment=Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.OpenInNew,null,tint=Paper,
+                                modifier=Modifier.size(17.dp))
+                            Spacer(Modifier.width(9.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.site,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
+                                if(item.episode.isNotBlank()) {
+                                    Text(item.episode,maxLines=1,overflow=TextOverflow.Ellipsis,
+                                        color=Muted,fontSize=10.sp)
+                                }
+                            }
+                            Icon(Icons.Rounded.ChevronRight,null,tint=Muted)
+                        }
                     }
                 }
             }
