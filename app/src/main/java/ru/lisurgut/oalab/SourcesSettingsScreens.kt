@@ -170,6 +170,34 @@ fun SourcesScreen(library: LocalLibrary) {
                 }
             }
         }
+        item { SectionHeader("Личные видеоссылки", "Сохранены только на этом устройстве") }
+        if (library.personalStreams.isEmpty()) {
+            item {
+                Text("Ссылки можно добавлять на странице конкретного аниме.",
+                    color = Muted, fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 10.dp))
+            }
+        } else {
+            items(library.personalStreams, key = { it.animeKey + "|" + it.stream.episode + "|" + it.stream.url }) { item ->
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        .background(Panel, RoundedCornerShape(15.dp)).padding(11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Link, null, tint = Paper)
+                    Spacer(Modifier.width(9.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(item.animeTitle, maxLines = 1,
+                            fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Серия " + item.stream.episode + " · " + item.stream.team,
+                            maxLines = 1, color = Muted, fontSize = 10.sp)
+                    }
+                    IconButton(onClick = { library.removePersonalStream(item) }) {
+                        Icon(Icons.Rounded.DeleteOutline, "Удалить ссылку", tint = Muted)
+                    }
+                }
+            }
+        }
         item {
             SectionHeader("Мои загрузки", "Прямые MP4 · доступны офлайн после завершения",
                 action = { downloadRefresh++ })
@@ -398,7 +426,7 @@ fun SettingsScreen(library: LocalLibrary, onReload: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(23.dp))
-            Eyebrow("OAlab · 0.2.0")
+            Eyebrow("OAlab · 0.2.1")
             Spacer(Modifier.height(6.dp))
             Text(
                 "Jetpack Compose · Material 3 · Media3 ExoPlayer",

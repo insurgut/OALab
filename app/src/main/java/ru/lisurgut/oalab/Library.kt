@@ -161,12 +161,19 @@ data class SourceFeed(
     }
 }
 
+data class PersonalStream(
+    val animeKey: String,
+    val animeTitle: String,
+    val stream: StreamVariant
+)
+
 class LocalLibrary(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("oalab_preferences", Context.MODE_PRIVATE)
 
     val entries = mutableStateListOf<LibraryEntry>()
     val feeds = mutableStateListOf<SourceFeed>()
+    val personalStreams = mutableStateListOf<PersonalStream>()
     var language by mutableStateOf(prefs.getString("language", "ru") ?: "ru")
         private set
     var catalogProvider by mutableStateOf(prefs.getString("catalog", "Авто") ?: "Авто")
@@ -181,6 +188,25 @@ class LocalLibrary(private val context: Context) {
         private set
 
     init {
+        try {
+            val records = JSONArray(prefs.getString("personal_streams", "[]"))
+            for (i in 0 until records.length()) {
+                val r = records.getJSONObject(i)
+                val s = r.getJSONObject("stream")
+                personalStreams.add(PersonalStream(
+                    animeKey = r.getString("animeKey"), animeTitle = r.getString("animeTitle"),
+                    stream = StreamVariant(
+                        source = "Личная ссылка",
+                        episode = s.optInt("episode", 1),
+                        language = s.optString("language", "ja"),
+                        team = s.optString("team", "Мой поток"),
+                        voices = 1, votes = 0, popularity = 100,
+                        timing = "Пользовательский", url = s.getString("url"),
+                        subtitle = s.optString("subtitle")
+                    )
+                ))
+            }
+        } catch (_: Exception) { }
         try {
             val values = JSONArray(prefs.getString("library", "[]"))
             for (i in 0 until values.length()) entries.add(LibraryEntry.parse(values.getJSONObject(i)))
@@ -281,8 +307,63 @@ class LocalLibrary(private val context: Context) {
         prefs.edit().putString("feeds", JSONArray(feeds.map { it.url }).toString()).apply()
     }
 
+    private fun animeKey(anime: Anime): String = when {
+        anime.malId > 0 -> "mal:" + anime.malId
+        anime.anilistId > 0 -> "anilist:" + anime.anilistId
+        else -> anime.id
+    }
+
+    private fun persistPersonal() {
+        val json = JSONArray()
+        personalStreams.forEach { item ->
+            json.put(JSONObject().apply {
+                put("animeKey", item.animeKey)
+                put("animeTitle", item.animeTitle)
+                put("stream", JSONObject().apply {
+                    put("episode", item.stream.episode)
+                    put("language", item.stream.language)
+                    put("team", item.stream.team)
+                    put("url", item.stream.url)
+                    put("subtitle", item.stream.subtitle)
+                })
+            })
+        }
+        prefs.edit().putString("personal_streams", json.toString()).apply()
+    }
+
+    fun addPersonalStream(anime: Anime, episode: Int, url: String, team: String, language: String) {
+        val cleanUrl = url.trim()
+        require(cleanUrl.startsWith("https://", ignoreCase = true)) {
+            "Ссылка должна начинаться с https://"
+        }
+        require(episode in 1..9999) { "Укажи номер серии от 1 до 9999" }
+        val key = animeKey(anime)
+        require(cleanUrl.length <= 2048) { "Ссылка слишком длинная" }
+        personalStreams.removeAll { it.animeKey == key &&
+            it.stream.episode == episode && it.stream.url == cleanUrl }
+        personalStreams.add(PersonalStream(
+            animeKey = key, animeTitle = anime.title,
+            stream = StreamVariant(
+                source = "Личная ссылка", episode = episode,
+                language = language.ifBlank { "ja" },
+                team = team.ifBlank { "Мой поток" },
+                voices = 1, votes = 0, popularity = 100,
+                timing = "Пользовательский",
+                url = cleanUrl, subtitle = ""
+            )
+        ))
+        persistPersonal()
+    }
+
+    fun removePersonalStream(item: PersonalStream) {
+        personalStreams.remove(item)
+        persistPersonal()
+    }
+
     fun variantsFor(anime: Anime): List<StreamVariant> =
-        (DownloadSupport.offlineFor(context,anime) + feeds.flatMap { it.forAnime(anime) })
+        (DownloadSupport.offlineFor(context, anime) +
+            personalStreams.filter { it.animeKey == animeKey(anime) }.map { it.stream } +
+            feeds.flatMap { it.forAnime(anime) })
             .distinctBy { it.episode.toString() + "|" + it.url }
 
     fun rankVariants(streams: List<StreamVariant>, order: String): List<StreamVariant> {
