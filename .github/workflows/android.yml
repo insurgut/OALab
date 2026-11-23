@@ -67,20 +67,21 @@ jobs:
           cp "OAlab-v$VERSION.apk" public-update/
           cp lupd.txt public-update/lupd.txt
           python3 -c 'import json,sys; v=sys.argv[1]; base="https://insurgut.github.io/OALab/"; json.dump({"version":v,"apk":base+"OAlab-v"+v+".apk","notes":base+"lupd.txt"}, open("public-update/update.json","w"))' "$VERSION"
-      - name: Try to enable public GitHub Pages from private source
+      - name: Detect public Pages endpoint
         if: success()
-        continue-on-error: true
+        id: page_state
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api -X POST "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow || true
+          ENABLED="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.has_pages' || echo false)"
+          echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
       - name: Upload public update site artifact
-        if: success()
+        if: steps.page_state.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: public-update
       - name: Deploy APK update site
-        if: success()
+        if: steps.page_state.outputs.enabled == 'true'
         continue-on-error: true
         id: deployment
         uses: actions/deploy-pages@v4

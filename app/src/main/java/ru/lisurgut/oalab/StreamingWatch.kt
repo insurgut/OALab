@@ -89,8 +89,7 @@ object OfficialPlayback {
 
     fun select(episodes: List<OfficialEpisode>, number: Int): OfficialEpisode? =
         episodes.firstOrNull { it.episodeNumber() == number }
-            ?: episodes.firstOrNull { it.episodeNumber() == null && number == 1 }
-            ?: episodes.firstOrNull()
+            ?: if (number == 1) episodes.firstOrNull() else null
 
     fun directStream(anime: Anime, ep: Int, source: OfficialEpisode): StreamVariant =
         StreamVariant(
