@@ -282,7 +282,8 @@ class LocalLibrary(private val context: Context) {
     }
 
     fun variantsFor(anime: Anime): List<StreamVariant> =
-        feeds.flatMap { it.forAnime(anime) }.distinctBy { it.episode.toString() + "|" + it.url }
+        (OpenMedia.streamsFor(anime) + feeds.flatMap { it.forAnime(anime) })
+            .distinctBy { it.episode.toString() + "|" + it.url }
 
     fun rankVariants(streams: List<StreamVariant>, order: String): List<StreamVariant> {
         val comparator = when (order) {
