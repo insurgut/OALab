@@ -226,6 +226,17 @@ class LocalLibrary(private val context: Context) {
         hiddenRecommendations = emptySet()
         prefs.edit().remove("hidden_recommendations").apply()
     }
+    fun unhideRecommendation(anime: Anime) {
+        if (anime.id !in hiddenRecommendations) return
+        hiddenRecommendations = hiddenRecommendations - anime.id
+        prefs.edit().putStringSet(
+            "hidden_recommendations", hiddenRecommendations.toSet()
+        ).apply()
+    }
+    fun clearRecommendationGenres() {
+        recommendationGenres = emptySet()
+        prefs.edit().remove("recommendation_genres").apply()
+    }
     fun toggleRecommendationGenre(genre: String) {
         val sanitized = genre.trim().take(75)
         if (sanitized.isBlank()) return
