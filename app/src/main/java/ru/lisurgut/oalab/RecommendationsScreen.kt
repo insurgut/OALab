@@ -294,7 +294,7 @@ fun RecommendationsScreen(
         SnackbarHost(
             hostState = snackbarHost,
             modifier = Modifier.align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp, bottom = 86.dp)
+                .padding(start = 16.dp, end = 16.dp, bottom = 86.dp)
         )
     }
 }
