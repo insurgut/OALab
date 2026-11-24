@@ -37,6 +37,10 @@ import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import android.os.SystemClock
+import android.os.Build
+import android.content.pm.PackageManager
+import android.content.pm.PackageInfo
+import java.io.File
 
 data class ChangeLine(val kind: Char, val message: String)
 data class UpdateInfo(
@@ -55,8 +59,6 @@ object OAlabUpdates {
     private const val ANONYMOUS_UPDATES = "https://insurgut.github.io/OALab/update.json"
     private const val ANONYMOUS_BASE = "https://insurgut.github.io/OALab/"
     val changes = listOf('+', '-', '*')
-    private const val NETWORK_INTERVAL_MS = 5 * 60_000L
-    private const val ERROR_BACKOFF_MS = 2 * 60_000L
     @Volatile private var lastNetworkAttemptMs = 0L
     @Volatile private var cachedScan: UpdateScan? = null
 
@@ -65,21 +67,6 @@ object OAlabUpdates {
         .filter { it.length > 1 && it[0] in changes }
         .map { ChangeLine(it[0], it.substring(1).trim().trimStart(':').trim()) }
         .filter { it.message.isNotBlank() }
-
-    private fun semver(version: String): List<Int> =
-        version.removePrefix("v").substringBefore("-").split(".")
-            .map { it.toIntOrNull() ?: 0 }
-
-    private fun newer(remote: String, installed: String): Boolean {
-        val a = semver(remote)
-        val b = semver(installed)
-        for (index in 0..3) {
-            val x = a.getOrElse(index) { 0 }
-            val y = b.getOrElse(index) { 0 }
-            if (x != y) return x > y
-        }
-        return false
-    }
 
     private fun getText(uri: String): String {
         require(uri.startsWith("https://")) { "Требуется HTTPS" }
@@ -112,9 +99,13 @@ object OAlabUpdates {
     ): UpdateScan = withContext(Dispatchers.IO) {
         val now = SystemClock.elapsedRealtime()
         val previous = cachedScan
-        val interval = if (previous?.error == null) NETWORK_INTERVAL_MS else ERROR_BACKOFF_MS
-        if (!force && previous != null &&
-            now >= lastNetworkAttemptMs && now - lastNetworkAttemptMs < interval) {
+        if (!UpdatePollingPolicy.shouldRequest(
+                elapsedMs = now,
+                lastAttemptMs = lastNetworkAttemptMs,
+                resultPresent = previous != null,
+                lastError = previous?.error != null,
+                forced = force
+            )) {
             return@withContext previous
         }
         lastNetworkAttemptMs = now
@@ -129,7 +120,7 @@ object OAlabUpdates {
                 val apk = manifest.optString("apk")
                 val notesUrl = manifest.optString("notes")
                 if (apk.startsWith(ANONYMOUS_BASE) && notesUrl.startsWith(ANONYMOUS_BASE)) {
-                    if (newer(version, installed)) {
+                    if (UpdatePollingPolicy.isNewer(version, installed)) {
                         val found = UpdateScan(
                             update = UpdateInfo(
                                 version = version,
@@ -153,7 +144,7 @@ object OAlabUpdates {
                 val item = versions.getJSONObject(index)
                 if (item.optBoolean("draft")) continue
                 val tag = item.optString("tag_name")
-                if (!newer(tag, installed)) continue
+                if (!UpdatePollingPolicy.isNewer(tag, installed)) continue
                 val assets = item.optJSONArray("assets") ?: JSONArray()
                 var apk: String? = null
                 var notes: String? = null
@@ -214,9 +205,50 @@ object OAlabUpdates {
         } ?: -1
     }
 
+    @Suppress("DEPRECATION")
+    private fun signers(info: PackageInfo): Set<String> {
+        if (Build.VERSION.SDK_INT >= 28) {
+            val signing = info.signingInfo ?: return emptySet()
+            return signing.apkContentsSigners?.map { it.toCharsString() }?.toSet()
+                ?: emptySet()
+        }
+        return info.signatures?.map { it.toCharsString() }?.toSet() ?: emptySet()
+    }
+
+    @Suppress("DEPRECATION")
     fun install(context: Context, id: Long) {
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val uri = manager.getUriForDownloadedFile(id) ?: error("APK не найден")
+        // Validate that the downloaded APK truly belongs to OAlab, is newer,
+        // and is signed by the same certificate BEFORE opening Android installer.
+        val local = manager.query(DownloadManager.Query().setFilterById(id))?.use { c ->
+            if (c.moveToFirst()) {
+                c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI))
+            } else null
+        }
+        val file = local?.let { Uri.parse(it).path }?.let(::File)
+            ?: error("Не удалось проверить файл APK")
+        if (!file.isFile) error("Загруженный APK отсутствует")
+        val flags = if (Build.VERSION.SDK_INT >= 28)
+            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val pm = context.packageManager
+        val candidate = pm.getPackageArchiveInfo(file.absolutePath, flags)
+            ?: error("Неверный формат APK")
+        if (candidate.packageName != context.packageName)
+            error("APK относится к другому приложению")
+        val current = pm.getPackageInfo(context.packageName, flags)
+        val candidateVersion = if (Build.VERSION.SDK_INT >= 28)
+            candidate.longVersionCode else candidate.versionCode.toLong()
+        val currentVersion = if (Build.VERSION.SDK_INT >= 28)
+            current.longVersionCode else current.versionCode.toLong()
+        if (candidateVersion <= currentVersion) error("Эта версия уже установлена")
+        if (signers(candidate).isEmpty() || signers(candidate) != signers(current)) {
+            error(
+                "Подпись обновления отличается от установленной версии. " +
+                "Без исходного ключа Android не разрешит обновить её поверх старой. " +
+                "Не удаляй приложение, пока не сохранишь локальные данные."
+            )
+        }
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
