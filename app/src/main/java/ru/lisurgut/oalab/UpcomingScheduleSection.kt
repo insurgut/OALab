@@ -73,11 +73,11 @@ fun UpcomingScheduleSection(
     val days = remember(schedule, today) { UpcomingSchedule.byDate(schedule, today) }
     val selected = days.getOrNull(selectedDay.coerceIn(0, 6))
     val itemsForDay = selected?.items.orEmpty()
-    val selectedItems = if (expandedDay) itemsForDay else itemsForDay.take(6)
+    val selectedItems = if (expandedDay) itemsForDay else itemsForDay.take(3)
 
     Column(
         Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(9.dp)
+        verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -86,12 +86,12 @@ fun UpcomingScheduleSection(
             Column(Modifier.weight(1f)) {
                 Text(
                     "Скоро выйдет",
-                    color = Paper, fontSize = 21.sp,
+                    color = Paper, fontSize = 19.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Следующие 7 дней · серии AniLibria",
-                    color = Muted, fontSize = 11.sp
+                    "Ближайшие 7 дней",
+                    color = Muted, fontSize = 10.sp
                 )
             }
             if (refreshing) {
@@ -121,7 +121,7 @@ fun UpcomingScheduleSection(
                 val index = days.indexOfFirst { it.date == day.date }
                 val selectedChip = !entireWeek && selectedDay == index
                 Column(
-                    Modifier.width(84.dp)
+                    Modifier.width(76.dp)
                         .clip(RoundedCornerShape(13.dp))
                         .background(
                             if (selectedChip) MaterialTheme.colorScheme.primaryContainer
@@ -132,9 +132,9 @@ fun UpcomingScheduleSection(
                             expandedDay = false
                             entireWeek = false
                         }
-                        .padding(horizontal = 7.dp, vertical = 9.dp),
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Text(
                         if (index == 0) "ЗАВТРА" else UpcomingSchedule.shortDay(day.date),
@@ -273,50 +273,44 @@ fun UpcomingScheduleSection(
 
 @Composable
 private fun ScheduledAnimeRow(item: ScheduledAnime, onOpen: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(13.dp))
-            .background(Panel)
-            .clickable(onClick = onOpen)
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Cover(
-            item.anime.cover,
-            Modifier.width(54.dp).height(72.dp)
-                .clip(RoundedCornerShape(9.dp)),
-            item.anime.title
-        )
-        Column(
-            Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+    Column {
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(9.dp))
+                .clickable(onClick = onOpen)
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                item.anime.title,
-                color = Paper,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                lineHeight = 15.sp,
-                overflow = TextOverflow.Ellipsis
+            Cover(
+                item.anime.cover,
+                Modifier.width(45.dp).height(61.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                item.anime.title
             )
-            Text(
-                item.nextEpisode?.let { "Ожидается серия $it" }
-                    ?: "Номер следующей серии уточняется",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 11.sp
-            )
-            Text(
-                "Время публикации не объявлено",
-                color = Muted, fontSize = 10.sp
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(
+                    item.anime.title,
+                    color = Paper, fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2, lineHeight = 15.sp,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    item.nextEpisode?.let { "Ожидается серия " + it }
+                        ?: "Номер серии уточняется",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 10.sp
+                )
+            }
+            Icon(
+                Icons.Rounded.ChevronRight, "Подробнее",
+                tint = Muted, modifier = Modifier.size(17.dp)
             )
         }
-        Icon(
-            Icons.Rounded.ChevronRight,
-            "Открыть аниме",
-            modifier = Modifier.size(18.dp),
-            tint = Muted
-        )
+        HorizontalDivider(color = Edge.copy(alpha = .5f), thickness = .6.dp)
     }
 }
