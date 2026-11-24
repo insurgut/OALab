@@ -1,6 +1,8 @@
 package ru.lisurgut.oalab
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.content.SharedPreferences
 import androidx.compose.runtime.*
 import org.json.JSONArray
@@ -197,8 +199,23 @@ class LocalLibrary(private val context: Context) {
     }
     fun selectQuality(streams: List<StreamVariant>): StreamVariant? {
         val sorted = streams.sortedByDescending { it.popularity }
-        return if (dataSaver) sorted.firstOrNull { it.popularity <= 480 }
-            ?: sorted.lastOrNull() else sorted.firstOrNull()
+        if (dataSaver) return sorted.firstOrNull { it.popularity <= 480 }
+            ?: sorted.lastOrNull()
+        val capabilities = try {
+            val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                as ConnectivityManager
+            manager.getNetworkCapabilities(manager.activeNetwork)
+        } catch (_: Exception) { null }
+        // Starting quality is conservative on mobile or low-bandwidth links.
+        val downstream = capabilities?.linkDownstreamBandwidthKbps ?: 0
+        val cellular = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+        val preferred = when {
+            downstream in 1..2200 -> 480
+            downstream in 2201..5000 || cellular -> 720
+            else -> 1080
+        }
+        return sorted.firstOrNull { it.popularity <= preferred }
+            ?: sorted.lastOrNull()
     }
     fun progressPercent(anime: Anime, episode: Int, durationMs: Long): Int {
         if (durationMs <= 0L) return 0

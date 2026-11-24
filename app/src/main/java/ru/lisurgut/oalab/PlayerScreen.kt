@@ -105,6 +105,8 @@ fun PlayerScreen(
     var speedBoost by remember { mutableStateOf(false) }
     var retryPending by remember { mutableStateOf(false) }
     var retryAttempts by remember { mutableIntStateOf(0) }
+    var rebufferCount by remember { mutableIntStateOf(0) }
+    var playedBefore by remember { mutableStateOf(false) }
     var buffering by remember { mutableStateOf(false) }
     var bufferAheadMs by remember { mutableLongStateOf(0L) }
     var controls by remember { mutableStateOf(true) }
@@ -132,7 +134,10 @@ fun PlayerScreen(
     DisposableEffect(player) {
         onFullscreen(true)
         val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                playing = isPlaying
+                if (isPlaying) playedBefore = true
+            }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val nextIndex = player.currentMediaItemIndex.coerceAtLeast(0)
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
@@ -153,6 +158,20 @@ fun PlayerScreen(
             }
             override fun onPlaybackStateChanged(state: Int) {
                 buffering = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_BUFFERING && playedBefore && !library.dataSaver) {
+                    rebufferCount++
+                    if (rebufferCount >= 3) {
+                        rebufferCount = 0
+                        val current = latestQueue.getOrNull(player.currentMediaItemIndex)
+                            ?: now.stream
+                        val lower = library.variantsFor(now.anime)
+                            .filter {
+                                it.episode == current.episode &&
+                                    it.popularity < current.popularity
+                            }.maxByOrNull { it.popularity }
+                        if (lower != null) selectedCallback(lower)
+                    }
+                }
                 if (state == Player.STATE_READY && player.isPlaying) {
                     retryAttempts = 0
                 }
@@ -241,6 +260,8 @@ fun PlayerScreen(
         error = null
         retryAttempts = 0
         retryPending = false
+        playedBefore = false
+        rebufferCount = 0
         player.setMediaItems(queue.map(::mediaItem), start, savedPosition)
         player.prepare()
         player.playWhenReady = true
@@ -442,6 +463,25 @@ fun PlayerScreen(
                     "Серия " + episode + if (merged) " · вместе" else "",
                     color = Color.White.copy(alpha = .8f), fontSize = 10.sp
                 )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    if (library.dataSaver) "Экономия"
+                    else "Авто · " + active.popularity + "p",
+                    color = Color.White.copy(alpha = .7f), fontSize = 9.sp
+                )
+                IconButton(
+                    onClick = { library.updateMergeEpisodes(!merged) },
+                    modifier = Modifier.size(31.dp)
+                ) {
+                    Icon(
+                        if (merged) Icons.Rounded.QueuePlayNext else Icons.Rounded.PlaylistPlay,
+                        if (merged) "Отключить объединение серий"
+                        else "Объединить серии",
+                        tint = if (merged) MaterialTheme.colorScheme.primary
+                            else Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
                 IconButton(
                     onClick = {
                         controlsLocked = !controlsLocked
@@ -524,16 +564,30 @@ fun PlayerScreen(
                     .padding(horizontal = 20.dp, vertical = 5.dp)
             ) {
                 if (merged && completeDuration > 0L) {
-                    Canvas(Modifier.fillMaxWidth().height(5.dp)) {
-                        for (fraction in EpisodeTimeline.boundaryFractions(durations)) {
-                            val x = size.width * fraction
-                            drawLine(
-                                color = Color.White.copy(alpha = .68f),
-                                start = androidx.compose.ui.geometry.Offset(x, 0f),
-                                end = androidx.compose.ui.geometry.Offset(x, size.height),
-                                strokeWidth = 2.dp.toPx()
-                            )
+                    BoxWithConstraints(Modifier.fillMaxWidth().height(17.dp)) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            for (fraction in EpisodeTimeline.boundaryFractions(durations)) {
+                                val x = size.width * fraction
+                                drawLine(
+                                    color = Color.White.copy(alpha = .72f),
+                                    start = androidx.compose.ui.geometry.Offset(x, 0f),
+                                    end = androidx.compose.ui.geometry.Offset(x, size.height),
+                                    strokeWidth = 2.dp.toPx()
+                                )
+                            }
                         }
+                        EpisodeTimeline.boundaryFractions(durations)
+                            .forEachIndexed { chapter, fraction ->
+                                val x = (maxWidth * fraction - 10.dp)
+                                    .coerceIn(0.dp, (maxWidth - 20.dp).coerceAtLeast(0.dp))
+                                Box(
+                                    Modifier.offset(x = x)
+                                        .size(width = 20.dp, height = 17.dp)
+                                        .clickable {
+                                            seek(durations.take(chapter + 1).sum())
+                                        }
+                                )
+                            }
                     }
                 }
                 if (pendingSeek != null) {
