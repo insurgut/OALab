@@ -174,9 +174,12 @@ class LocalLibrary(private val context: Context) {
     val entries = mutableStateListOf<LibraryEntry>()
     val feeds = mutableStateListOf<SourceFeed>()
     val personalStreams = mutableStateListOf<PersonalStream>()
+    val resolvedStreams = androidx.compose.runtime.mutableStateMapOf<String, List<StreamVariant>>()
     var language by mutableStateOf(prefs.getString("language", "ru") ?: "ru")
         private set
-    var catalogProvider by mutableStateOf(prefs.getString("catalog", "Авто") ?: "Авто")
+    var catalogProvider by mutableStateOf(
+        (prefs.getString("catalog", "Авто") ?: "Авто").takeIf { it == "AniLiberty" } ?: "Авто"
+    )
         private set
     var voiceSort by mutableStateOf(prefs.getString("voice_sort", "Популярность") ?: "Популярность")
         private set
@@ -281,6 +284,7 @@ class LocalLibrary(private val context: Context) {
     fun cachedCatalog(): List<Anime> = try {
         val values = JSONArray(prefs.getString("catalog_cache", "[]"))
         (0 until values.length()).map { Anime.fromJson(values.getJSONObject(it)) }
+            .filter { it.id.startsWith("aniliberty:") }
     } catch (_: Exception) { emptyList() }
 
     private fun feedFile(url: String) = File(
@@ -360,8 +364,13 @@ class LocalLibrary(private val context: Context) {
         persistPersonal()
     }
 
+    fun saveResolvedStreams(anime: Anime, streams: List<StreamVariant>) {
+        resolvedStreams[anime.id] = streams
+    }
+
     fun variantsFor(anime: Anime): List<StreamVariant> =
         (DownloadSupport.offlineFor(context, anime) +
+            resolvedStreams[anime.id].orEmpty() +
             personalStreams.filter { it.animeKey == animeKey(anime) }.map { it.stream } +
             feeds.flatMap { it.forAnime(anime) })
             .distinctBy { it.episode.toString() + "|" + it.url }

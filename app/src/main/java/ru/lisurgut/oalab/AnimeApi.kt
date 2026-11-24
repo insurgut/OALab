@@ -104,7 +104,13 @@ object AnimeApi {
         fromYear: Int? = null,
         toYear: Int? = null
     ): List<Anime> = withContext(Dispatchers.IO) {
-        val providers = if (provider == "Авто") listOf("AniList", "Jikan", "Kitsu")
+        // "Авто" is now the fully streamable AniLiberty catalog, not metadata-only titles.
+        if (provider == "Авто" || provider == "AniLiberty") {
+            return@withContext AniLibertyApi.catalog(
+                query, category, sort, page, fromYear, toYear
+            )
+        }
+        val providers = listOf(provider)
             else listOf(provider)
         var failure: Exception? = null
         for (source in providers) {

@@ -36,14 +36,37 @@ fun DetailScreen(
     onWatch: (Int, String?) -> Unit
 ) {
     val context = LocalContext.current
+    var loadingEpisodes by remember(anime.id) { mutableStateOf(true) }
+    var episodesError by remember(anime.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(anime.id) {
+        loadingEpisodes = true
+        episodesError = null
+        try {
+            val resolved = AniLibertyApi.resolve(anime)
+            if (resolved.isNotEmpty()) library.saveResolvedStreams(anime, resolved)
+        } catch (error: Exception) {
+            episodesError = error.localizedMessage
+        } finally {
+            loadingEpisodes = false
+        }
+    }
     val variants = library.variantsFor(anime)
-    val availableEps = (variants.map { it.episode } +
-        (1..anime.episodes.coerceIn(1, 600)).toList()).distinct().sorted()
+    val releasedEpisodes = variants.map { it.episode }.distinct().sorted()
+    val availableEps = if (anime.id.startsWith("aniliberty:") && releasedEpisodes.isNotEmpty()) {
+        releasedEpisodes
+    } else {
+        (releasedEpisodes + (1..anime.episodes.coerceIn(1, 600)).toList()).distinct().sorted()
+    }
     var episode by remember(anime.id) {
         mutableIntStateOf(
             library.entry(anime)?.lastEpisode?.takeIf { it in availableEps }
                 ?: availableEps.firstOrNull() ?: 1
         )
+    }
+    LaunchedEffect(availableEps) {
+        if (availableEps.isNotEmpty() && episode !in availableEps) {
+            episode = availableEps.first()
+        }
     }
     var chosenUrl by remember(anime.id) { mutableStateOf<String?>(null) }
     var showVoices by remember { mutableStateOf(false) }
@@ -252,10 +275,16 @@ fun DetailScreen(
                     ) {
                         Icon(Icons.Rounded.CloudOff, null, tint = Muted)
                         Spacer(Modifier.height(12.dp))
-                        Text("Подбираем автоматически", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (loadingEpisodes) "Загружаем серии…" else "Серии пока не найдены",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Spacer(Modifier.height(7.dp))
                         Text(
-                            "Нажми «Смотреть»: приложение проверит доступные серии и запустит их внутри приложения.",
+                            if (episodesError != null)
+                                "Видеокаталог временно недоступен: " + episodesError
+                            else "Нажми «Смотреть», чтобы повторить поиск доступных серий.",
                             color = Muted, fontSize = 12.sp, lineHeight = 19.sp
                         )
                     }

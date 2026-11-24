@@ -173,8 +173,9 @@ object AniLibertyApi {
         query += "f[sorting]" to order
         val json = request("/anime/catalog/releases?" + params(query))
         val aliases = genreNames[category].orEmpty()
-        return (0 until arrayOf(json).length())
-            .mapNotNull { arrayOf(json).optJSONObject(it)?.let(::asAnime) }
+        val releases = arrayOf(json)
+        return (0 until releases.length())
+            .mapNotNull { releases.optJSONObject(it)?.let(::asAnime) }
             .filter { entry ->
                 aliases.isEmpty() || entry.genres.any { genre ->
                     aliases.any { alias -> genre.lowercase().contains(alias) }

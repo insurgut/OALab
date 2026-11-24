@@ -124,6 +124,24 @@ fun WatchResolverScreen(
             return@LaunchedEffect
         }
         try {
+            // Prefer direct playable episodes from the public AniLiberty v1 API.
+            val released = try {
+                AniLibertyApi.resolve(request.anime)
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (released.isNotEmpty()) {
+                library.saveResolvedStreams(request.anime, released)
+                val options = library.rankVariants(
+                    released.filter { it.episode == request.episode }, library.voiceSort
+                )
+                val selected = options.firstOrNull { it.url == request.preferredUrl }
+                    ?: options.firstOrNull()
+                if (selected != null) {
+                    onNativePlay(selected)
+                    return@LaunchedEffect
+                }
+            }
             val episodes = OfficialPlayback.episodes(request.anime)
             val best = OfficialPlayback.select(episodes, request.episode)
             if (best != null) {
