@@ -724,7 +724,8 @@ fun PlayerScreen(
                     AnimatedEpisodePreview(
                         streams.filter { it.episode == nextStream.episode }
                             .minByOrNull { it.popularity } ?: nextStream,
-                        Modifier.size(width = 110.dp, height = 67.dp)
+                        Modifier.size(width = 110.dp, height = 67.dp),
+                        active = !library.dataSaver
                     )
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.Top) {
