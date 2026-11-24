@@ -168,6 +168,21 @@ class LocalLibrary(private val context: Context) {
         variantsFor(anime).mapNotNull { it.details }.distinctBy { it.episode }
             .sortedBy { it.episode }
 
+    fun globalEpisodePosition(anime: Anime, episode: Int, timeMs: Long): Long {
+        val details = episodeDetails(anime)
+        val index = details.indexOfFirst { it.episode == episode }
+        if (index < 0) return timeMs
+        return EpisodeTimeline.globalPosition(details.map { it.durationMs }, index, timeMs)
+            ?: timeMs
+    }
+
+    fun markEpisodeFinished(anime: Anime, episode: Int, durationMs: Long) {
+        if (durationMs <= 0) return
+        prefs.edit()
+            .putLong("episode|" + anime.id + "|" + episode, durationMs)
+            .apply()
+    }
+
     fun updateAutoplay(value: Boolean) {
         autoplay = value
         prefs.edit().putBoolean("autoplay", value).apply()

@@ -76,6 +76,7 @@ fun PlayerScreen(
     var appliedMerged by remember { mutableStateOf(false) }
     var appliedAnime by remember { mutableStateOf("") }
     var currentIndex by remember { mutableIntStateOf(0) }
+    var oldMediaIndex by remember { mutableIntStateOf(0) }
     var time by remember { mutableLongStateOf(0L) }
     var length by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
@@ -106,7 +107,16 @@ fun PlayerScreen(
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                currentIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+                val nextIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+                    nextIndex != oldMediaIndex) {
+                    val completed = latestQueue.getOrNull(oldMediaIndex)
+                    if (completed != null) library.markEpisodeFinished(
+                        now.anime, completed.episode, completed.details?.durationMs ?: 0L
+                    )
+                }
+                oldMediaIndex = nextIndex
+                currentIndex = nextIndex
                 controls = false
                 suppressedNext = false
                 tried.clear()
@@ -130,6 +140,14 @@ fun PlayerScreen(
                 }
             }
             override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) {
+                    val completed = latestQueue.getOrNull(
+                        player.currentMediaItemIndex.coerceAtLeast(0)
+                    )
+                    if (completed != null) library.markEpisodeFinished(
+                        now.anime, completed.episode, completed.details?.durationMs ?: 0L
+                    )
+                }
                 if (state == Player.STATE_ENDED && !library.mergeEpisodes && library.autoplay) {
                     val next = library.variantsFor(now.anime)
                         .filter { it.episode == now.episode + 1 }
@@ -143,11 +161,9 @@ fun PlayerScreen(
             val idx = player.currentMediaItemIndex.coerceAtLeast(0)
             val stream = applied.getOrNull(idx) ?: now.stream
             val segmentPosition = player.currentPosition.coerceAtLeast(0L)
-            val offset = if (appliedMerged) {
-                applied.take(idx).sumOf { it.details?.durationMs ?: 0L }
-            } else 0L
             library.recordPlayback(
-                now.anime, stream.episode, segmentPosition, offset + segmentPosition
+                now.anime, stream.episode, segmentPosition,
+                library.globalEpisodePosition(now.anime, stream.episode, segmentPosition)
             )
             player.removeListener(listener)
             player.release()
@@ -176,6 +192,7 @@ fun PlayerScreen(
         appliedAnime = request.anime.id
         appliedMerged = merged
         currentIndex = start
+        oldMediaIndex = start
         tried.clear()
         error = null
         player.setMediaItems(queue.map(::mediaItem), start, savedPosition)
@@ -212,9 +229,9 @@ fun PlayerScreen(
                 }
             }
             if (++tick % 12 == 0 && position > 0L) {
-                val offset = if (merged) durations.take(currentIndex).sum() else 0L
                 library.recordPlayback(
-                    request.anime, episode, position, offset + position
+                    request.anime, episode, position,
+                    library.globalEpisodePosition(request.anime, episode, position)
                 )
             }
             delay(500)
@@ -432,6 +449,7 @@ fun PlayerScreen(
                     Modifier.width(310.dp)
                         .clip(RoundedCornerShape(15.dp))
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = .95f))
+                        .clickable { selectedCallback(nextStream) }
                         .padding(9.dp),
                     horizontalArrangement = Arrangement.spacedBy(9.dp),
                     verticalAlignment = Alignment.CenterVertically
