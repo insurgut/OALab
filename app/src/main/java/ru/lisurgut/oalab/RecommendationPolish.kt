@@ -175,9 +175,11 @@ fun RecommendationSpotlightCard(
     recommendation: AnimeRecommendation,
     favorite: Boolean,
     onOpen: () -> Unit,
-    onFavorite: () -> Unit
+    onFavorite: () -> Unit,
+    onHide: () -> Unit
 ) {
     val anime = recommendation.anime
+    var menu by remember(anime.id) { mutableStateOf(false) }
     Box(
         Modifier.fillMaxWidth().height(205.dp)
             .clip(RoundedCornerShape(19.dp))
@@ -212,18 +214,49 @@ fun RecommendationSpotlightCard(
                 letterSpacing = .9.sp
             )
         }
-        Box(
-            Modifier.align(Alignment.TopEnd).padding(9.dp)
-                .size(37.dp).clip(CircleShape)
-                .background(Color.Black.copy(alpha = .51f))
-                .clickable(onClick = onFavorite),
-            contentAlignment = Alignment.Center
+        Row(
+            Modifier.align(Alignment.TopEnd).padding(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(
-                if (favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                if (favorite) "Убрать из избранного" else "Добавить в избранное",
-                tint = Color.White, modifier = Modifier.size(19.dp)
-            )
+            Box(
+                Modifier.size(36.dp).clip(CircleShape)
+                    .background(Color.Black.copy(alpha = .51f))
+                    .clickable(onClick = onFavorite),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (favorite) Icons.Rounded.Favorite
+                    else Icons.Rounded.FavoriteBorder,
+                    if (favorite) "Убрать из избранного" else "В избранное",
+                    tint = Color.White, modifier = Modifier.size(19.dp)
+                )
+            }
+            Box {
+                IconButton(
+                    onClick = { menu = true },
+                    modifier = Modifier.size(36.dp)
+                        .background(Color.Black.copy(alpha = .51f), CircleShape)
+                ) {
+                    Icon(
+                        Icons.Rounded.MoreVert, "Другие действия",
+                        tint = Color.White, modifier = Modifier.size(18.dp)
+                    )
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Не интересно", fontSize = 12.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.VisibilityOff, null,
+                                modifier = Modifier.size(18.dp))
+                        },
+                        onClick = {
+                            menu = false
+                            onHide()
+                        }
+                    )
+                }
+            }
         }
         Column(
             Modifier.align(Alignment.BottomStart)

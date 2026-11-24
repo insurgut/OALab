@@ -120,6 +120,21 @@ fun RecommendationsScreen(
             .take(10) + fromProvider).distinct().take(18)
     }
 
+    val hideWithUndo: (Anime) -> Unit = { anime ->
+        library.hideRecommendation(anime)
+        scope.launch {
+            val response = snackbarHost.showSnackbar(
+                message = "Скрыто из рекомендаций",
+                actionLabel = "Отменить",
+                withDismissAction = true,
+                duration = SnackbarDuration.Short
+            )
+            if (response == SnackbarResult.ActionPerformed) {
+                library.unhideRecommendation(anime)
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Ink)) {
         LazyColumn(
         state = listState,
@@ -193,7 +208,8 @@ fun RecommendationsScreen(
                     recommendation = best,
                     favorite = library.isFavorite(best.anime),
                     onOpen = { onOpen(best.anime) },
-                    onFavorite = { library.toggleFavorite(best.anime) }
+                    onFavorite = { library.toggleFavorite(best.anime) },
+                    onHide = { hideWithUndo(best.anime) }
                 )
                 Spacer(Modifier.height(21.dp))
             }
@@ -227,21 +243,7 @@ fun RecommendationsScreen(
                     favorite = library.isFavorite(recommendation.anime),
                     onOpen = { onOpen(recommendation.anime) },
                     onFavorite = { library.toggleFavorite(recommendation.anime) },
-                    onHide = {
-                        val anime = recommendation.anime
-                        library.hideRecommendation(anime)
-                        scope.launch {
-                            val response = snackbarHost.showSnackbar(
-                                message = "Скрыто из рекомендаций",
-                                actionLabel = "Отменить",
-                                withDismissAction = true,
-                                duration = SnackbarDuration.Short
-                            )
-                            if (response == SnackbarResult.ActionPerformed) {
-                                library.unhideRecommendation(anime)
-                            }
-                        }
-                    }
+                    onHide = { hideWithUndo(recommendation.anime) }
                 )
             }
             item(key = "reco-info") {
