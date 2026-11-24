@@ -2,6 +2,8 @@ package ru.lisurgut.oalab
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,7 +25,8 @@ fun SettingsScreen(
 ) {
     Column(
         Modifier.fillMaxSize().background(Ink).statusBarsPadding()
-            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 3.dp)
     ) {
         Text(
             "Настройки", color = Paper, fontSize = 27.sp,

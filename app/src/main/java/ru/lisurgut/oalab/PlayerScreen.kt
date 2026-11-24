@@ -455,7 +455,9 @@ fun PlayerScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     AnimatedEpisodePreview(
-                        nextStream, Modifier.size(width = 110.dp, height = 67.dp)
+                        streams.filter { it.episode == nextStream.episode }
+                            .minByOrNull { it.popularity } ?: nextStream,
+                        Modifier.size(width = 110.dp, height = 67.dp)
                     )
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.Top) {
