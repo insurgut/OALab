@@ -292,6 +292,43 @@ object AniLibertyApi {
         return result.distinctBy { it.episode.toString() + "|" + it.url }
     }
 
+    /**
+     * Provider's schedule returns weekly slots, not precise publication dates/times.
+     * Live /week is a raw array; its documented format can also wrap it in data.
+     * published_release_episode describes the current week, not the NEXT episode.
+     */
+    fun weeklySchedule(): List<ScheduledAnime> {
+        val rows = arrayOf(request("/anime/schedule/week"))
+        val result = mutableListOf<ScheduledAnime>()
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val release = row.optJSONObject("release") ?: continue
+            if (!allowed(release) || row.optBoolean("full_season_is_released", false)) continue
+            val anime = asAnime(release) ?: continue
+            val dayRaw = release.opt("publish_day")
+            val weekday = when (dayRaw) {
+                is JSONObject -> dayRaw.opt("value")?.toString()?.toIntOrNull()
+                is Number -> dayRaw.toInt()
+                is String -> dayRaw.toIntOrNull()
+                else -> null
+            } ?: continue
+            if (weekday !in 1..7) continue
+            val episode = row.opt("next_release_episode_number")
+                ?.toString()?.toDoubleOrNull()
+                ?.takeIf { it.isFinite() && it > 0.0 && it % 1.0 == 0.0 }
+                ?.toInt()
+            result += ScheduledAnime(
+                anime = anime,
+                dayOfWeek = weekday,
+                nextEpisode = episode
+            )
+        }
+        return result.distinctBy { it.anime.id to it.dayOfWeek }
+    }
+
+    suspend fun resolveWeeklySchedule(): List<ScheduledAnime> =
+        withContext(Dispatchers.IO) { weeklySchedule() }
+
     suspend fun resolve(anime: Anime): List<StreamVariant> = withContext(Dispatchers.IO) {
         streams(anime)
     }
