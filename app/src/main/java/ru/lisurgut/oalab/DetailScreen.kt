@@ -105,9 +105,7 @@ fun DetailScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             if (anime.year > 0) {
-                                Box(Modifier.size(7.dp)
-                                    .background(yearTint(anime.year), CircleShape))
-                                Text(anime.year.toString(), color = Color.White, fontSize = 11.sp)
+                                AnimeYearMark(anime.year)
                             }
                             Text(anime.format.ifBlank { "Аниме" },
                                 color = Color.White.copy(alpha = .8f), fontSize = 11.sp)

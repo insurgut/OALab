@@ -27,10 +27,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
-private enum class RecommendationYears(val label: String) {
-    ALL("Любые"), RECENT("С 2020"), CLASSICS("До 2015")
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RecommendationsScreen(library: LocalLibrary, onOpen: (Anime) -> Unit) {
@@ -46,7 +42,8 @@ fun RecommendationsScreen(library: LocalLibrary, onOpen: (Anime) -> Unit) {
     var filtersOpen by remember { mutableStateOf(false) }
     var reasonFilter by remember { mutableStateOf<RecommendationKind?>(null) }
     var ratingFloor by remember { mutableIntStateOf(0) }
-    var years by remember { mutableStateOf(RecommendationYears.ALL) }
+    var yearFrom by remember { mutableStateOf<Int?>(null) }
+    var yearTo by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
 
@@ -95,13 +92,12 @@ fun RecommendationsScreen(library: LocalLibrary, onOpen: (Anime) -> Unit) {
     val hidden = library.hiddenRecommendations
     val mode = library.recommendationMode
     val choices = remember(candidates, history, mode, selectedGenres, hidden,
-        reasonFilter, ratingFloor, years) {
+        reasonFilter, ratingFloor, yearFrom, yearTo) {
         RecommendationEngine.rank(
             candidates = candidates, history = history,
             explicitGenres = selectedGenres, hidden = hidden, mode = mode,
             kindFilter = reasonFilter, minRating = ratingFloor,
-            yearFrom = if (years == RecommendationYears.RECENT) 2020 else null,
-            yearTo = if (years == RecommendationYears.CLASSICS) 2015 else null
+            yearFrom = yearFrom, yearTo = yearTo
         )
     }
     val genres = remember(candidates, history, selectedGenres) {
@@ -115,13 +111,14 @@ fun RecommendationsScreen(library: LocalLibrary, onOpen: (Anime) -> Unit) {
     }
     val filterCount = (if (reasonFilter != null) 1 else 0) +
         (if (ratingFloor > 0) 1 else 0) +
-        (if (years != RecommendationYears.ALL) 1 else 0) +
+        (if (yearFrom != null || yearTo != null) 1 else 0) +
         (if (selectedGenres.isNotEmpty()) 1 else 0)
 
     val reset: () -> Unit = {
         reasonFilter = null
         ratingFloor = 0
-        years = RecommendationYears.ALL
+        yearFrom = null
+        yearTo = null
         library.clearRecommendationGenres()
     }
     val hide: (Anime) -> Unit = { anime ->
@@ -405,15 +402,9 @@ fun RecommendationsScreen(library: LocalLibrary, onOpen: (Anime) -> Unit) {
                     "Год выхода", color = Paper,
                     fontSize = 13.sp, fontWeight = FontWeight.Medium
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    RecommendationYears.entries.forEach { era ->
-                        FilterChip(
-                            selected = era == years,
-                            onClick = { years = era },
-                            label = { Text(era.label, fontSize = 11.sp) },
-                            shape = RoundedCornerShape(11.dp)
-                        )
-                    }
+                YearSpectrumPicker(yearFrom, yearTo) { from, to ->
+                    yearFrom = from
+                    yearTo = to
                 }
                 Spacer(Modifier.height(15.dp))
                 Button(

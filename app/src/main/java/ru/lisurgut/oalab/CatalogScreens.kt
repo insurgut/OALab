@@ -97,15 +97,17 @@ fun HomeScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Spacer(Modifier.height(9.dp))
-                        Text(
-                            listOfNotNull(
-                                featured.year.takeIf { it > 0 }?.toString(),
-                                featured.format.takeIf { it.isNotBlank() },
-                                featured.score.takeIf { it > 0 }?.let { (it / 10f).toString() + " / 10" }
-                            ).joinToString("  ·  "),
-                            color = Color.White.copy(alpha = .76f),
-                            fontSize = 12.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            AnimeYearMark(featured.year)
+                            Text(
+                                listOfNotNull(
+                                    featured.format.takeIf { it.isNotBlank() },
+                                    featured.score.takeIf { it > 0 }?.let { (it / 10f).toString() + " / 10" }
+                                ).joinToString("  ·  "),
+                                color = Color.White.copy(alpha = .76f), fontSize = 12.sp
+                            )
+                        }
                         Spacer(Modifier.height(19.dp))
                         Button(
                             onClick = { onOpen(featured) },

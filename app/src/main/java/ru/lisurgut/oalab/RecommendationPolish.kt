@@ -100,18 +100,21 @@ fun RecommendationCompactItem(
                     maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
                 val meta = listOfNotNull(
-                    anime.year.takeIf { it > 0 }?.toString(),
                     anime.score.takeIf { it > 0 }?.let {
                         "★ " + String.format(Locale.ROOT, "%.1f", it / 10.0)
                     },
                     anime.genres.firstOrNull()
                 )
-                if (meta.isNotEmpty()) {
-                    Text(
-                        meta.joinToString(" · "), color = Muted,
-                        fontSize = 10.sp, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                if (meta.isNotEmpty() || anime.year > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        AnimeYearMark(anime.year)
+                        if (meta.isNotEmpty()) Text(
+                            meta.joinToString(" · "), color = Muted,
+                            fontSize = 10.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 Text(
                     recommendation.reason,

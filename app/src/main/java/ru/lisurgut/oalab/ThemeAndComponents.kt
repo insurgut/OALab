@@ -158,12 +158,12 @@ fun PosterCard(
             color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 17.sp)
         Spacer(Modifier.height(3.dp))
-        Text(
-            listOfNotNull(anime.year.takeIf { it > 0 }?.toString(), anime.format.takeIf { it.isNotBlank() }).joinToString(" · "),
-            color = Muted,
-            maxLines = 1,
-            fontSize = 11.sp
-        )
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            AnimeYearMark(anime.year)
+            Text(anime.format, color = Muted, maxLines = 1, fontSize = 11.sp,
+                overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 

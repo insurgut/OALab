@@ -19,25 +19,37 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
-// Exact year hue formula ported from user's Plum 0.29 source.
-fun yearTint(year: Int): Color = Color.hsv((year * 137.508f) % 360f, .42f, .99f)
+// Stable RGB ramp: each supported year has a different 8-bit green channel.
+private const val YearColorMin = 1900
+private const val YearFilterMin = 1950
+private const val YearFilterMax = 2027
+
+fun yearTint(year: Int): Color {
+    val t = (year.coerceIn(YearColorMin, YearFilterMax) - YearColorMin).toFloat() /
+        (YearFilterMax - YearColorMin)
+    return Color(
+        red = (146 + 84 * t).roundToInt(),
+        green = (116 + 132 * t).roundToInt(),
+        blue = (170 + 85 * t).roundToInt()
+    )
+}
 
 @Composable
 fun AnimeYearMark(year: Int) {
-    if (year > 0) Row(verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Spacer(Modifier.size(7.dp).clip(CircleShape).background(yearTint(year)))
-        Text(year.toString(), color = Muted, style = MaterialTheme.typography.labelMedium)
-    }
+    if (year > 0) Text(
+        year.toString(), color = yearTint(year),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.background(Color(0xFF211C29), RoundedCornerShape(5.dp))
+            .padding(horizontal = 5.dp, vertical = 2.dp)
+    )
 }
 
 @Composable
@@ -79,47 +91,65 @@ fun PlumAnimeLine(
 
 @Composable
 fun YearSpectrumPicker(first: Int?, last: Int?, onChange: (Int?, Int?) -> Unit) {
-    val minYear = 1950
-    val maxYear = 2027
-    val from = (first ?: minYear).coerceIn(minYear,maxYear)
-    val until = (last ?: maxYear).coerceIn(from,maxYear)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 7.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Годы выпуска", fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                modifier = Modifier.weight(1f))
-            if (first != null || last != null) TextButton(onClick = {onChange(null,null)}) {
-                Text("Сбросить", fontSize = 12.sp)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        YearSelect(
+            label = "От", selected = first,
+            years = YearFilterMin..(last ?: YearFilterMax).coerceIn(YearFilterMin, YearFilterMax),
+            modifier = Modifier.weight(1f),
+            onSelect = { onChange(it, last) }
+        )
+        YearSelect(
+            label = "До", selected = last,
+            years = (first ?: YearFilterMin).coerceIn(YearFilterMin, YearFilterMax)..YearFilterMax,
+            modifier = Modifier.weight(1f),
+            onSelect = { onChange(first, it) }
+        )
+    }
+}
+
+@Composable
+private fun YearSelect(
+    label: String, selected: Int?, years: IntRange,
+    modifier: Modifier = Modifier, onSelect: (Int?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier) {
+        Text(label, color = Muted, fontSize = 11.sp)
+        Box {
+            Surface(
+                onClick = { expanded = true },
+                shape = RoundedCornerShape(11.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth().height(44.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        if (selected == null) Text("Любой", color = Paper, fontSize = 13.sp)
+                        else AnimeYearMark(selected)
+                    }
+                    Icon(Icons.Rounded.ArrowDropDown, "Выбрать год", tint = Muted)
+                }
             }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(from.toString(), color = yearTint(from), fontWeight = FontWeight.Bold)
-            Text(until.toString(), color = yearTint(until), fontWeight = FontWeight.Bold)
-        }
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
-                .background(Brush.horizontalGradient((0..24).map {
-                    yearTint(minYear + ((maxYear - minYear)*it/24f).roundToInt())
-                })))
-            RangeSlider(
-                value = from.toFloat()..until.toFloat(),
-                onValueChange = {
-                    val a = it.start.roundToInt().coerceIn(minYear,maxYear)
-                    val b = it.endInclusive.roundToInt().coerceIn(a,maxYear)
-                    onChange(if (a==minYear && b==maxYear) null else a,
-                        if (a==minYear && b==maxYear) null else b)
-                },
-                valueRange = minYear.toFloat()..maxYear.toFloat(),
-                colors = SliderDefaults.colors(
-                    thumbColor = lerp(yearTint(from),yearTint(until),.5f),
-                    activeTrackColor = lerp(yearTint(from),yearTint(until),.5f),
-                    inactiveTrackColor = Color.Transparent
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("1950","1980","2000","2027").forEach {
-                Text(it,fontSize=10.sp,color=Muted)
+            DropdownMenu(
+                expanded = expanded, onDismissRequest = { expanded = false },
+                modifier = Modifier.heightIn(max = 300.dp)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Любой") },
+                    onClick = { onSelect(null); expanded = false }
+                )
+                years.reversed().forEach { year ->
+                    DropdownMenuItem(
+                        text = { AnimeYearMark(year) },
+                        trailingIcon = {
+                            if (selected == year) Icon(Icons.Rounded.Check, "Выбран")
+                        },
+                        onClick = { onSelect(year); expanded = false }
+                    )
+                }
             }
         }
     }
@@ -312,7 +342,6 @@ fun PlumCatalogScreen(
     onMore: ()->Unit, onRetry: ()->Unit
 ) {
     var showFilters by remember { mutableStateOf(false) }
-    var showRange by remember { mutableStateOf(false) }
     var draftSort by remember(showFilters) { mutableStateOf(sort) }
     var draftCategory by remember(showFilters) { mutableStateOf(category) }
     var draftFrom by remember(showFilters) { mutableStateOf(fromYear) }
@@ -483,7 +512,6 @@ fun PlumCatalogScreen(
                             draftSort = "Популярные"
                             draftFrom = null
                             draftTo = null
-                            showRange = false
                         }
                     ) {
                         Text("Очистить", fontSize = 12.sp)
@@ -533,54 +561,9 @@ fun PlumCatalogScreen(
                     fontSize = 13.sp, fontWeight = FontWeight.Medium
                 )
                 Spacer(Modifier.height(6.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    verticalArrangement = Arrangement.spacedBy(0.dp)
-                ) {
-                    val quick = listOf(
-                        Triple("Любой", null, null),
-                        Triple("2025+", 2025, null),
-                        Triple("2020+", 2020, null),
-                        Triple("2010-е", 2010, 2019),
-                        Triple("До 2000", null, 1999)
-                    )
-                    quick.forEach { (title, earliest, latest) ->
-                        FilterChip(
-                            selected = draftFrom == earliest && draftTo == latest,
-                            onClick = {
-                                draftFrom = earliest
-                                draftTo = latest
-                                showRange = false
-                            },
-                            label = { Text(title, fontSize = 11.sp) },
-                            shape = RoundedCornerShape(11.dp)
-                        )
-                    }
-                    FilterChip(
-                        selected = showRange,
-                        onClick = { showRange = !showRange },
-                        label = { Text("Диапазон", fontSize = 11.sp) },
-                        shape = RoundedCornerShape(11.dp)
-                    )
-                }
-                if (showRange) {
-                    val first = (draftFrom ?: 1950).coerceIn(1950, 2027)
-                    val last = (draftTo ?: 2027).coerceIn(first, 2027)
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(first.toString(), color = Muted, fontSize = 12.sp)
-                        Text(last.toString(), color = Muted, fontSize = 12.sp)
-                    }
-                    RangeSlider(
-                        value = first.toFloat()..last.toFloat(),
-                        onValueChange = { range ->
-                            draftFrom = range.start.roundToInt()
-                            draftTo = range.endInclusive.roundToInt()
-                        },
-                        valueRange = 1950f..2027f
-                    )
+                YearSpectrumPicker(draftFrom, draftTo) { from, to ->
+                    draftFrom = from
+                    draftTo = to
                 }
                 Spacer(Modifier.height(16.dp))
                 Button(
