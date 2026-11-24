@@ -50,7 +50,14 @@ fun OALabTheme(content: @Composable () -> Unit) {
     val palette = if (Build.VERSION.SDK_INT >= 31) {
         if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else if (dark) darkColorScheme() else lightColorScheme()
-    MaterialTheme(colorScheme = palette, content = content)
+    // Surface supplies correct onBackground as LocalContentColor to every screen.
+    MaterialTheme(colorScheme = palette) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = palette.background,
+            contentColor = palette.onBackground
+        ) { content() }
+    }
 }
 
 @Composable
@@ -92,7 +99,8 @@ fun SectionHeader(title: String, subtitle: String? = null, action: (() -> Unit)?
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp)
+            Text(title, fontSize = 18.sp, color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp)
             if (subtitle != null) Text(subtitle, fontSize = 12.sp, color = Muted)
         }
         if (action != null) {
@@ -125,14 +133,14 @@ fun PosterCard(
                 Icon(
                     if (favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     "В избранное",
-                    tint = Paper,
+                    tint = Color.White,
                     modifier = Modifier.size(18.dp)
                 )
             }
             if (anime.score > 0) {
                 Text(
                     (anime.score / 10f).toString(),
-                    color = Paper,
+                    color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
@@ -142,7 +150,9 @@ fun PosterCard(
             }
         }
         Spacer(Modifier.height(9.dp))
-        Text(anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 17.sp)
+        Text(anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 17.sp)
         Spacer(Modifier.height(3.dp))
         Text(
             listOfNotNull(anime.year.takeIf { it > 0 }?.toString(), anime.format.takeIf { it.isNotBlank() }).joinToString(" · "),

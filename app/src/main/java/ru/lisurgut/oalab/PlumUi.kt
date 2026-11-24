@@ -53,7 +53,8 @@ fun PlumAnimeLine(
             Cover(anime.cover, Modifier.size(width = 46.dp, height = 55.dp)
                 .clip(RoundedCornerShape(9.dp)), description = anime.title)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(anime.title, fontSize = 16.sp, lineHeight = 19.sp,
+                Text(anime.title, color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 16.sp, lineHeight = 19.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -141,7 +142,7 @@ fun PlumHomeScreen(
         item {
             Row(Modifier.fillMaxWidth().padding(top=9.dp,bottom=11.dp),
                 verticalAlignment=Alignment.CenterVertically) {
-                Text("OAlab",Modifier.weight(1f),fontSize=27.sp,
+                Text("OAlab",Modifier.weight(1f),color=MaterialTheme.colorScheme.onBackground,fontSize=27.sp,
                     fontWeight=FontWeight.Medium, letterSpacing=(-1.2).sp)
                 IconButton(onClick=onCatalogue) {Icon(Icons.Rounded.Search,"Поиск")}
             }
@@ -156,15 +157,15 @@ fun PlumHomeScreen(
                 Column(Modifier.fillMaxHeight().fillMaxWidth(.76f).padding(17.dp),
                     verticalArrangement=Arrangement.SpaceBetween) {
                     Text(if(progress.isNotEmpty())"Продолжить просмотр" else "В тренде",
-                        color=Muted,fontSize=11.sp)
+                        color=Color.White.copy(alpha=.84f),fontSize=11.sp)
                     Column {
-                        Text(featured.title,maxLines=2,overflow=TextOverflow.Ellipsis,
+                        Text(featured.title,color=Color.White,maxLines=2,overflow=TextOverflow.Ellipsis,
                             fontSize=19.sp,lineHeight=23.sp,fontWeight=FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp),
                             verticalAlignment=Alignment.CenterVertically) {
                             AnimeYearMark(featured.year)
-                            Text(featured.format.ifBlank{"Аниме"},color=Muted,fontSize=11.sp)
+                            Text(featured.format.ifBlank{"Аниме"},color=Color.White.copy(alpha=.84f),fontSize=11.sp)
                         }
                     }
                     Button(onClick={onPlay(featured)},shape=CircleShape,
@@ -190,7 +191,8 @@ fun PlumHomeScreen(
         item {
             Row(Modifier.fillMaxWidth().padding(vertical=5.dp),
                 verticalAlignment=Alignment.CenterVertically) {
-                Text("Для тебя",fontSize=22.sp,fontWeight=FontWeight.Medium,
+                Text("Для тебя",color=MaterialTheme.colorScheme.onBackground,
+                    fontSize=22.sp,fontWeight=FontWeight.Medium,
                     modifier=Modifier.weight(1f))
                 TextButton(onClick=onCatalogue){Text("Каталог",fontSize=12.sp)}
             }
@@ -224,7 +226,8 @@ fun PlumCatalogScreen(
     LazyColumn(Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
         contentPadding=PaddingValues(start=16.dp,end=16.dp,bottom=110.dp)) {
         item {
-            Text("Каталог",fontSize=30.sp,fontWeight=FontWeight.Medium,
+            Text("Каталог",color=MaterialTheme.colorScheme.onBackground,
+                fontSize=30.sp,fontWeight=FontWeight.Medium,
                 modifier=Modifier.padding(top=12.dp,bottom=12.dp))
             OutlinedTextField(value=search,onValueChange=onSearch,
                 modifier=Modifier.fillMaxWidth(),singleLine=true,shape=CircleShape,
@@ -300,7 +303,8 @@ fun PlumLibraryScreen(library:LocalLibrary,onOpen:(Anime)->Unit,onPlay:(Anime)->
     LazyColumn(Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
         contentPadding=PaddingValues(start=16.dp,end=16.dp,bottom=110.dp)){
         item {
-            Text("Библиотека",fontSize=30.sp,fontWeight=FontWeight.Medium,
+            Text("Библиотека",color=MaterialTheme.colorScheme.onBackground,
+                fontSize=30.sp,fontWeight=FontWeight.Medium,
                 modifier=Modifier.padding(top=14.dp,bottom=13.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement=Arrangement.spacedBy(7.dp)){

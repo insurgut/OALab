@@ -348,10 +348,10 @@ fun SettingsScreen(
             SectionHeader("Каталог и рекомендации")
             SettingSelect(
                 icon = Icons.Rounded.Dns,
-                title = "Каталог метаданных",
-                description = "Источники названий, постеров и описаний",
+                title = "Каталог с видеосериями",
+                description = "AniLiberty: эпизоды и видео без ручного ввода URL",
                 value = library.catalogProvider,
-                options = listOf("Авто", "AniList", "Jikan", "Kitsu"),
+                options = listOf("Авто", "AniLiberty"),
                 onSelect = { library.setProvider(it); onReload() }
             )
             SettingsSwitch(
@@ -446,7 +446,7 @@ fun SettingsScreen(
                 }
             }
             Spacer(Modifier.height(23.dp))
-            Eyebrow("OAlab · 0.3.2")
+            Eyebrow("OAlab · 0.4.0")
             Spacer(Modifier.height(6.dp))
             Text(
                 "Jetpack Compose · Material 3 · Media3 ExoPlayer",
