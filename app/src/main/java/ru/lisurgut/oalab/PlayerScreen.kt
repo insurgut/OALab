@@ -104,6 +104,7 @@ fun PlayerScreen(
     var controlsLocked by remember { mutableStateOf(false) }
     var pendingSeek by remember { mutableStateOf<Long?>(null) }
     var modeOptions by remember { mutableStateOf(false) }
+    var qualityMenu by remember { mutableStateOf(false) }
     var lastGestureSeek by remember { mutableLongStateOf(0L) }
     var gestureHint by remember { mutableStateOf("") }
     var gestureCount by remember { mutableIntStateOf(0) }
@@ -122,6 +123,8 @@ fun PlayerScreen(
 
     val active = queue.getOrNull(currentIndex) ?: request.stream
     val episode = active.episode
+    val episodeQualities = streams.filter { it.episode == episode && it.url.isNotBlank() }
+        .distinctBy { it.popularity }.sortedByDescending { it.popularity }
     val recordedDurations = remember { mutableStateMapOf<Int, Long>() }
     val durations = queue.map { item ->
         // Media3's measured time overrides imperfect metadata after an item loads.
@@ -167,7 +170,8 @@ fun PlayerScreen(
             }
             override fun onPlaybackStateChanged(state: Int) {
                 buffering = state == Player.STATE_BUFFERING
-                if (state == Player.STATE_BUFFERING && playedBefore && !library.dataSaver) {
+                if (state == Player.STATE_BUFFERING && playedBefore &&
+                    !library.dataSaver && library.videoQuality == 0) {
                     rebufferCount++
                     if (rebufferCount >= 3) {
                         rebufferCount = 0
@@ -248,6 +252,7 @@ fun PlayerScreen(
     LaunchedEffect(queue.map { it.url }, merged, request.episode, request.stream.url) {
         val oldStream = applied.getOrNull(player.currentMediaItemIndex)
         val sameAnime = appliedAnime == request.anime.id
+        val continuePlayback = if (sameAnime) player.playWhenReady else true
         val toggleOnly = sameAnime && appliedMerged != merged
         val desiredEpisode = if (toggleOnly) oldStream?.episode ?: request.episode
             else request.episode
@@ -273,7 +278,7 @@ fun PlayerScreen(
         rebufferCount = 0
         player.setMediaItems(queue.map(::mediaItem), start, savedPosition)
         player.prepare()
-        player.playWhenReady = true
+        player.playWhenReady = continuePlayback
     }
 
     LaunchedEffect(request.anime.id, episode) {
@@ -336,8 +341,10 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controls, request.stream.url, controlsLocked, modeOptions, pendingSeek) {
-        if (controls && !controlsLocked && !modeOptions &&
+    LaunchedEffect(
+        controls, request.stream.url, controlsLocked, modeOptions, qualityMenu, pendingSeek
+    ) {
+        if (controls && !controlsLocked && !modeOptions && !qualityMenu &&
             pendingSeek == null && error == null) {
             delay(4_000)
             controls = false
@@ -493,21 +500,39 @@ fun PlayerScreen(
                     color = Color.White.copy(alpha = .8f), fontSize = 10.sp
                 )
                 Spacer(Modifier.width(5.dp))
-                Text(
-                    if (library.dataSaver) "Экономия"
-                    else "Авто · " + active.popularity + "p",
-                    color = Color.White.copy(alpha = .7f), fontSize = 9.sp
-                )
+                Row(
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = .12f))
+                        .clickable {
+                            controls = true
+                            modeOptions = false
+                            qualityMenu = !qualityMenu
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (library.videoQuality == 0) "Авто " + active.popularity + "p"
+                        else active.popularity.toString() + "p",
+                        color = Color.White, fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Icon(Icons.Rounded.KeyboardArrowDown,
+                        "Выбрать качество", tint = Color.White,
+                        modifier = Modifier.size(15.dp))
+                }
                 Box(
                     Modifier.size(34.dp)
                         .clip(RoundedCornerShape(9.dp))
                         .combinedClickable(
                             onClick = {
                                 modeOptions = false
+                                qualityMenu = false
                                 library.updateMergeEpisodes(!merged)
                             },
                             onLongClick = {
                                 controls = true
+                                qualityMenu = false
                                 modeOptions = !modeOptions
                             },
                             onLongClickLabel = "Выбрать обычный или непрерывный просмотр"
@@ -557,7 +582,8 @@ fun PlayerScreen(
                 }
             }
 
-            if (!controlsLocked && pendingSeek == null && !modeOptions) Row(
+            if (!controlsLocked && pendingSeek == null &&
+                !modeOptions && !qualityMenu) Row(
                 Modifier.align(Alignment.Center)
                     .clip(RoundedCornerShape(14.dp))
                     .border(1.dp, Color.White.copy(alpha = .2f), RoundedCornerShape(14.dp))
@@ -637,6 +663,31 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
+            visible = qualityMenu && !pipMode && !controlsLocked,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+            modifier = Modifier.align(Alignment.TopEnd)
+                .padding(top = 51.dp, end = 37.dp)
+        ) {
+            PlayerQualityPanel(
+                available = episodeQualities.map { it.popularity },
+                preference = library.videoQuality,
+                current = active.popularity,
+                onSelect = { chosen ->
+                    library.updateVideoQuality(chosen)
+                    qualityMenu = false
+                    val selected = library.selectQuality(
+                        streams.filter { it.episode == episode }
+                    )
+                    if (selected != null && selected.url != active.url) {
+                        selectedCallback(selected)
+                    }
+                },
+                modifier = Modifier.width(227.dp)
+            )
+        }
+
+        AnimatedVisibility(
             visible = modeOptions && !pipMode && !controlsLocked,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically(),
@@ -676,7 +727,8 @@ fun PlayerScreen(
 
         AnimatedVisibility(
             visible = skip != null && error == null && !pipMode &&
-                !controlsLocked && pendingSeek == null && !modeOptions,
+                !controlsLocked && pendingSeek == null &&
+                !modeOptions && !qualityMenu,
             enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomEnd)
                 .padding(end = 20.dp, bottom = 76.dp)
@@ -703,7 +755,8 @@ fun PlayerScreen(
 
         AnimatedVisibility(
             visible = revealNext && error == null && !pipMode &&
-                !controlsLocked && pendingSeek == null && !modeOptions,
+                !controlsLocked && pendingSeek == null &&
+                !modeOptions && !qualityMenu,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 3 }),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopEnd)
