@@ -63,3 +63,6 @@ echo "All five permanent signing secrets configured in $repo."
 echo "Public signing certificate fingerprint: $fingerprint"
 echo "Keep a PRIVATE OFFLINE backup of this original keystore: $keystore"
 echo "Do not generate a new key for future OAlab versions."
+echo "Starting one verified release build using this signing identity..."
+gh workflow run android.yml -R "$repo" --ref main
+echo "Workflow dispatched. Inspect its result on GitHub Actions; no APK is published if signing verification fails."
