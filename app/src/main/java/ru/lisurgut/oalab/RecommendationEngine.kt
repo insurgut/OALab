@@ -4,62 +4,85 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 enum class RecommendationMode { PERSONAL, GENRES, DISCOVER }
+
+/**
+ * Six distinct recommendation explanations. All matched references come from
+ * real local LibraryEntry data; no imagined viewing history or external AI.
+ */
+enum class RecommendationKind(val label: String) {
+    GENRES("По жанрам"),
+    STORY("По сюжету"),
+    FAVORITE("На основе любимого"),
+    WATCHING("Похоже на текущее"),
+    STYLE("По стилю"),
+    DISCOVERY("Новое для тебя")
+}
 
 data class AnimeRecommendation(
     val anime: Anime,
     val score: Double,
     val reason: String,
-    val matchedGenres: List<String>
+    val matchedGenres: List<String>,
+    val kind: RecommendationKind = RecommendationKind.DISCOVERY,
+    val sourceAnime: Anime? = null
 )
 
-/**
- * Private, explainable, on-device content-based recommender.
- * Only AniLibria titles are allowed, and neither watch history nor preferences
- * are sent to a recommendation server.
- *
- * Signals: favorites, finished/watching/planned, real watch progress, dislikes,
- * explicit genres, rare-genre weighting, descriptions, year, catalog rating,
- * plus a diversity penalty so adjacent cards aren't near-identical.
- */
 object RecommendationEngine {
     private val locale = Locale.ROOT
-    private val commonWords = setOf(
-        "аниме", "серия", "серии", "история", "главный", "главная", "очень",
-        "который", "которая", "которые", "потому", "только", "после",
-        "время", "своего", "своей", "теперь", "когда", "чтобы", "может",
-        "будет", "между", "жизнь", "anime", "story", "their", "world",
-        "this", "that", "with", "from", "have", "they", "when", "about"
+    private val stopWords = setOf(
+        "аниме", "серия", "серии", "история", "главный", "главная",
+        "который", "которая", "которые", "только", "после", "время",
+        "своего", "своей", "теперь", "когда", "чтобы", "может", "будет",
+        "между", "жизнь", "жизни", "герой", "героиня", "аниме",
+        "вместе", "часть", "однажды", "мире", "свою", "одна",
+        "about", "this", "that", "with", "from", "have", "they",
+        "when", "their", "world", "anime", "story", "main", "after"
     )
+    private fun normalize(value: String): String = value
+        .lowercase(locale).replace('ё', 'е').trim()
+        .replace(Regex("\\s+"), " ")
 
-    private fun key(text: String): String = text.lowercase(locale).replace('ё','е')
-        .trim().replace(Regex("\\s+"), " ")
+    private fun genreKeys(anime: Anime): Set<String> =
+        anime.genres.map(::normalize).filter { it.isNotBlank() }.toSet()
 
-    private fun tokens(text: String): Set<String> =
-        Regex("[\\p{L}]{4,}").findAll(text.lowercase(locale).replace('ё','е'))
-            .map { it.value }.filter { it !in commonWords }
-            .take(140).toSet()
+    private fun words(value: String): Set<String> =
+        Regex("[\\p{L}]{4,}").findAll(normalize(value))
+            .map { it.value }
+            .filter { it !in stopWords }
+            .take(120).toSet()
 
-    private fun genres(anime: Anime): Set<String> =
-        anime.genres.map(::key).filter(String::isNotBlank).toSet()
+    private fun jaccard(a: Set<String>, b: Set<String>): Double =
+        if (a.isEmpty() || b.isEmpty()) 0.0
+        else a.intersect(b).size.toDouble() / a.union(b).size
 
-    private fun influence(entry: LibraryEntry): Double = when {
-        entry.status == "Брошено" -> -1.5
+    private fun weight(entry: LibraryEntry): Double = when {
+        entry.status == "Брошено" -> -3.0
         entry.favorite && entry.status == "Просмотрено" -> 5.0
-        entry.favorite -> 4.0
-        entry.status == "Просмотрено" -> 3.4
-        entry.status == "Смотрю" -> 2.7
-        entry.lastPosition > 0L -> 2.0
-        entry.status == "В планах" -> 0.8
+        entry.favorite -> 4.2
+        entry.status == "Просмотрено" -> 3.5
+        entry.status == "Смотрю" -> 3.0
+        entry.lastPosition > 0 -> 2.5
+        entry.status == "В планах" -> .7
         else -> 0.0
     }
 
-    private fun overlap(a: Set<String>, b: Set<String>): Double {
-        if (a.isEmpty() || b.isEmpty()) return 0.0
-        return a.intersect(b).size.toDouble() / a.union(b).size
-    }
+    private data class Evidence(
+        val kind: RecommendationKind,
+        val strength: Double,
+        val reason: String,
+        val source: Anime? = null,
+        val genres: List<String> = emptyList()
+    )
+    private data class Scored(
+        val anime: Anime,
+        val overall: Double,
+        val genres: Set<String>,
+        val evidence: List<Evidence>
+    )
 
     fun rank(
         candidates: List<Anime>,
@@ -67,145 +90,216 @@ object RecommendationEngine {
         explicitGenres: Set<String> = emptySet(),
         hidden: Set<String> = emptySet(),
         mode: RecommendationMode = RecommendationMode.PERSONAL,
-        limit: Int = 35
+        limit: Int = 35,
+        kindFilter: RecommendationKind? = null,
+        minRating: Int = 0,
+        yearFrom: Int? = null,
+        yearTo: Int? = null
     ): List<AnimeRecommendation> {
         if (limit <= 0) return emptyList()
-        val knownIds = history.filter {
-            it.favorite || it.status != "Не смотрел" || it.lastPosition > 0L
-        }.map { it.anime.id }.toSet()
+
+        // Never recommend a title already in the user's library, even if its
+        // viewing status is unset. IDs are AniLibria-specific.
+        val known = history.map { it.anime.id }.toSet()
+        val chosenGenres = explicitGenres.map(::normalize).toSet()
         val pool = candidates.asSequence()
             .filter { it.id.startsWith("aniliberty:") }
-            .filter { it.id !in knownIds && it.id !in hidden }
+            .filter { it.id !in known && it.id !in hidden }
+            .filter { it.score >= minRating.coerceIn(0, 100) }
+            .filter { yearFrom == null || it.year >= yearFrom }
+            .filter { yearTo == null || it.year <= yearTo }
+            .filter {
+                mode != RecommendationMode.GENRES || chosenGenres.isEmpty() ||
+                    genreKeys(it).any { genre -> genre in chosenGenres }
+            }
             .distinctBy { it.id }.take(450).toList()
         if (pool.isEmpty()) return emptyList()
 
         val positive = history.filter {
-            it.anime.id.startsWith("aniliberty:") && influence(it) > 0.0
-        }.sortedByDescending(::influence)
-        val disliked = history.filter { influence(it) < 0.0 }
-        val explicit = explicitGenres.map(::key).toSet()
-        val freq = mutableMapOf<String, Int>()
-        for (anime in pool) for (g in genres(anime)) freq[g] = (freq[g] ?: 0) + 1
+            it.anime.id.startsWith("aniliberty:") && weight(it) > 0.0
+        }.sortedWith(compareByDescending<LibraryEntry> { weight(it) }
+            .thenByDescending { it.lastPosition }).take(30)
+        val negative = history.filter { weight(it) < 0.0 }
+        val freq = pool.flatMap { genreKeys(it) }
+            .groupingBy { it }.eachCount()
         fun idf(genre: String): Double =
             1.0 + ln((pool.size + 1.0) / ((freq[genre] ?: 0) + 1.0))
 
-        val weighted = mutableMapOf<String, Double>()
+        val taste = mutableMapOf<String, Double>()
         for (entry in positive) {
-            val weight = influence(entry)
-            for (g in genres(entry.anime)) {
-                weighted[g] = (weighted[g] ?: 0.0) + weight
+            for (g in genreKeys(entry.anime)) {
+                taste[g] = (taste[g] ?: 0.0) + weight(entry) * idf(g)
             }
         }
-        for (g in explicit) weighted[g] = (weighted[g] ?: 0.0) + 7.0
-        val profile = weighted.mapValues { (g, count) -> count * idf(g) }
-        val maxProfile = profile.values.sum().coerceAtLeast(1.0)
-        val weightedSeeds = positive.take(20)
-        val allSeedWords = weightedSeeds.asSequence().flatMap {
-            tokens(it.anime.description).asSequence()
-        }.groupingBy { it }.eachCount()
-        val seedNorm = allSeedWords.values.sum().coerceAtLeast(1).toDouble()
+        for (g in chosenGenres) {
+            taste[g] = (taste[g] ?: 0.0) + 7.0 * idf(g)
+        }
+        val tasteSum = taste.values.sum().coerceAtLeast(1.0)
 
-        val centerYear = positive.filter { it.anime.year in 1960..2100 }
-            .let { matches ->
-                if (matches.isEmpty()) null
-                else matches.sumOf { it.anime.year * influence(it) } /
-                    matches.sumOf(::influence)
+        val scored = pool.mapNotNull { anime ->
+            val gs = genreKeys(anime)
+            val description = words(anime.description)
+            val matches = anime.genres.filter { normalize(it) in taste }
+                .distinctBy(::normalize)
+                .sortedByDescending { taste[normalize(it)] ?: 0.0 }
+            val likedAffinity = gs.sumOf { taste[it] ?: 0.0 } / tasteSum
+            val unpopular = negative.sumOf {
+                jaccard(gs, genreKeys(it.anime)) * (-weight(it)) * .14
+            }.coerceAtMost(1.15)
+
+            val evidence = mutableListOf<Evidence>()
+            for (entry in positive) {
+                val seed = entry.anime
+                val seedGenres = genreKeys(seed)
+                val overlap = gs.intersect(seedGenres)
+                val similarity = jaccard(gs, seedGenres)
+                val seenWeight = weight(entry) / 5.0
+                val matched = anime.genres.filter { normalize(it) in overlap }
+                if (matched.isNotEmpty()) {
+                    evidence += Evidence(
+                        kind = RecommendationKind.GENRES,
+                        strength = .60 + similarity * 1.3 + seenWeight * .4,
+                        reason = "Предложено по жанрам аниме «" + seed.title + "»: " +
+                            matched.take(3).joinToString(", "),
+                        source = seed, genres = matched.take(3)
+                    )
+                    if (entry.favorite) {
+                        evidence += Evidence(
+                            kind = RecommendationKind.FAVORITE,
+                            strength = .8 + similarity * 1.65 + seenWeight * .55,
+                            reason = "По любимому аниме «" + seed.title + "»",
+                            source = seed, genres = matched.take(3)
+                        )
+                    }
+                    if (entry.status == "Смотрю") {
+                        evidence += Evidence(
+                            kind = RecommendationKind.WATCHING,
+                            strength = .77 + similarity * 1.5 + seenWeight * .42,
+                            reason = "Похоже на то, что смотришь: «" + seed.title + "»",
+                            source = seed, genres = matched.take(3)
+                        )
+                    }
+                }
+
+                val seedWords = words(seed.description)
+                val sharedWords = description.intersect(seedWords)
+                if (sharedWords.size >= 2) {
+                    val contentScore = sharedWords.size.toDouble() /
+                        sqrt(max(1, description.size) * max(1, seedWords.size).toDouble())
+                    if (contentScore >= .10) {
+                        evidence += Evidence(
+                            kind = RecommendationKind.STORY,
+                            strength = .85 + min(1.4, contentScore * 4.0) +
+                                seenWeight * .35,
+                            reason = "Похожая история с «" + seed.title + "»",
+                            source = seed, genres = matched.take(2)
+                        )
+                    }
+                }
+                val similarFormat = anime.format.isNotBlank() &&
+                    seed.format.isNotBlank() &&
+                    normalize(anime.format) == normalize(seed.format)
+                val similarYear = anime.year in 1960..2100 &&
+                    seed.year in 1960..2100 &&
+                    abs(anime.year - seed.year) <= 4
+                if (similarYear && similarFormat && (similarity > 0.0 || sharedWords.isNotEmpty())) {
+                    evidence += Evidence(
+                        kind = RecommendationKind.STYLE,
+                        strength = .5 + seenWeight * .22 + similarity * .9,
+                        reason = "Тот же формат и близкий год, что у «" + seed.title + "»",
+                        source = seed, genres = matched.take(2)
+                    )
+                }
             }
-        data class Candidate(
-            val anime: Anime,
-            val base: Double,
-            val keyGenres: Set<String>,
-            val reason: String,
-            val matching: List<String>
-        )
-        val scored = pool.map { candidate ->
-            val candidateGenres = genres(candidate)
-            val matches = candidate.genres.filter { key(it) in profile.keys }
-                .distinctBy(::key).sortedByDescending { profile[key(it)] ?: 0.0 }
-            val weightedMatches = candidateGenres.sumOf {
-                max(0.0, profile[it] ?: 0.0)
-            } / maxProfile
-            val negative = disliked.sumOf { entry ->
-                overlap(candidateGenres, genres(entry.anime)) * 0.12
-            }.coerceAtMost(.36)
-            val explicitMatch = candidateGenres.count { it in explicit }
-                .toDouble() / explicit.size.coerceAtLeast(1)
-            val seed = weightedSeeds.maxByOrNull {
-                overlap(candidateGenres, genres(it.anime)) *
-                    (influence(it) / 5.0)
+
+            val chosenMatch = anime.genres.filter { normalize(it) in chosenGenres }
+            if (chosenMatch.isNotEmpty()) {
+                evidence += Evidence(
+                    kind = RecommendationKind.GENRES,
+                    strength = 1.6 + chosenMatch.size * .30,
+                    reason = "Предложено по выбранным жанрам: " +
+                        chosenMatch.take(3).joinToString(", "),
+                    genres = chosenMatch.take(3)
+                )
             }
-            val seedSimilarity = seed?.let {
-                overlap(candidateGenres, genres(it.anime))
-            } ?: 0.0
+            // Discovery is an honest fallback with no invented reference anime.
+            val novelty = if (positive.isEmpty()) 1.0
+                else 1.0 - (positive.maxOfOrNull {
+                    jaccard(gs, genreKeys(it.anime))
+                } ?: 0.0)
+            evidence += Evidence(
+                kind = RecommendationKind.DISCOVERY,
+                strength = .6 + novelty * .9,
+                reason = if (positive.isEmpty() && chosenGenres.isEmpty())
+                    "Открытие по каталогу AniLibria"
+                else "Другой жанр для твоей подборки" +
+                    anime.genres.firstOrNull()?.let { ": " + it }.orEmpty()
+            )
 
-            val candidateWords = tokens(candidate.description)
-            val descriptions = candidateWords.sumOf {
-                (allSeedWords[it] ?: 0).toDouble()
-            } / seedNorm
-            val yearAffinity = centerYear?.let {
-                1.0 / (1.0 + abs(candidate.year - it) / 7.0)
-            }?.takeIf { candidate.year in 1960..2100 } ?: 0.0
-            val rating = (candidate.score / 100.0).coerceIn(0.0, 1.0)
-            val freshness = ((candidate.year - 2000) / 30.0)
-                .coerceIn(0.0, 1.0)
-            val novelty = if (positive.isEmpty()) 1.0 else
-                (1.0 - seedSimilarity).coerceIn(0.0, 1.0)
+            val availableEvidence = if (kindFilter == null) evidence
+                else evidence.filter { it.kind == kindFilter }
+            if (availableEvidence.isEmpty()) return@mapNotNull null
 
+            val rating = if (anime.score > 0) anime.score / 100.0 else .38
+            val freshness = ((anime.year - 2000) / 30.0).coerceIn(0.0, 1.0)
+            val mainSignal = evidence.filter {
+                it.kind != RecommendationKind.DISCOVERY
+            }.maxOfOrNull { it.strength } ?: 0.0
             val base = when (mode) {
                 RecommendationMode.PERSONAL ->
-                    3.1 * weightedMatches + .6 * seedSimilarity +
-                        .40 * descriptions + .26 * yearAffinity +
-                        .26 * rating + .08 * freshness + .8 * explicitMatch -
-                        negative
+                    2.15 * likedAffinity + .70 * mainSignal +
+                        .27 * rating + .06 * freshness - unpopular
                 RecommendationMode.GENRES ->
-                    3.7 * (if (explicit.isNotEmpty()) explicitMatch else weightedMatches) +
-                        .4 * seedSimilarity + .24 * rating + .12 * freshness -
-                        negative
+                    2.7 * likedAffinity + .7 * mainSignal + .17 * rating - unpopular
                 RecommendationMode.DISCOVER ->
-                    1.8 * novelty + .45 * weightedMatches + .55 * rating +
-                        .15 * freshness - negative
+                    1.65 * novelty + .35 * likedAffinity +
+                        .18 * mainSignal + .49 * rating - unpopular
             }
-            val reason = when {
-                explicit.isNotEmpty() && matches.any { key(it) in explicit } ->
-                    "Вы выбрали: " + matches.filter { key(it) in explicit }
-                        .take(2).joinToString(", ")
-                mode == RecommendationMode.DISCOVER && candidate.genres.isNotEmpty() ->
-                    "Попробовать жанр: " + candidate.genres.take(2).joinToString(", ")
-                matches.isNotEmpty() && seed != null && seedSimilarity >= .20 ->
-                    "Похоже на «" + seed.anime.title + "»"
-                matches.isNotEmpty() ->
-                    "Ваши жанры: " + matches.take(2).joinToString(", ")
-                positive.isEmpty() && explicit.isEmpty() ->
-                    "Подборка по каталогу AniLibria"
-                candidate.score >= 80 -> "Высокая оценка в каталоге"
-                else -> "Другие жанры для знакомства"
-            }
-            Candidate(candidate, base, candidateGenres, reason, matches.take(3))
+            Scored(anime, base, gs, availableEvidence)
         }
 
-        // Maximal marginal relevance: retain accuracy, but diversify recommendations
-        // instead of presenting 30 titles of the same genre consecutively.
-        val result = mutableListOf<Candidate>()
         val remaining = scored.toMutableList()
+        val result = mutableListOf<AnimeRecommendation>()
+        val selectedGenres = mutableListOf<Set<String>>()
+        val reasonCounts = mutableMapOf<RecommendationKind, Int>()
         while (remaining.isNotEmpty() && result.size < limit) {
-            val picked = remaining.maxWithOrNull(
-                compareBy<Candidate> {
-                    val redundancy = result.maxOfOrNull { selected ->
-                        overlap(it.keyGenres, selected.keyGenres)
+            fun bestEvidence(item: Scored): Evidence {
+                return item.evidence.maxWithOrNull(
+                    compareBy<Evidence> {
+                        // The first page should display a mix of evidence types,
+                        // not only genre matches repeated thirty times.
+                        val repeats = (reasonCounts[it.kind] ?: 0).coerceAtMost(6)
+                        it.strength - repeats * .22 +
+                            if (mode == RecommendationMode.DISCOVER &&
+                                it.kind == RecommendationKind.DISCOVERY) .70 else 0.0
+                    }.thenBy { it.kind.ordinal * -1 }
+                )!!
+            }
+            val winner = remaining.maxWithOrNull(
+                compareBy<Scored> { item ->
+                    val redundancy = selectedGenres.maxOfOrNull {
+                        jaccard(item.genres, it)
                     } ?: 0.0
-                    it.base - .40 * redundancy
+                    val evidence = bestEvidence(item)
+                    item.overall + evidence.strength * .28 -
+                        .52 * redundancy -
+                        .11 * (reasonCounts[evidence.kind] ?: 0).coerceAtMost(5)
                 }.thenBy { it.anime.id }
             ) ?: break
-            result += picked
-            remaining.remove(picked)
-        }
-        return result.map {
-            AnimeRecommendation(
-                anime = it.anime,
-                score = it.base,
-                reason = it.reason,
-                matchedGenres = it.matching
+
+            val why = bestEvidence(winner)
+            result += AnimeRecommendation(
+                anime = winner.anime,
+                score = winner.overall,
+                reason = why.reason,
+                matchedGenres = why.genres,
+                kind = why.kind,
+                sourceAnime = why.source
             )
+            selectedGenres += winner.genres
+            reasonCounts[why.kind] = (reasonCounts[why.kind] ?: 0) + 1
+            remaining.remove(winner)
         }
+        return result
     }
 }
