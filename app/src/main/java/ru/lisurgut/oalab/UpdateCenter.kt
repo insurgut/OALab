@@ -106,7 +106,7 @@ object OAlabUpdates {
                 lastError = previous?.error != null,
                 forced = force
             )) {
-            return@withContext previous
+            return@withContext previous ?: UpdateScan(checked = false)
         }
         lastNetworkAttemptMs = now
         val result = try {
@@ -251,7 +251,7 @@ object OAlabUpdates {
         }
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
         context.startActivity(intent)
     }
