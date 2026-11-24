@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,7 +23,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Single source detail: real AniLibria episodes, no dubbing/provider selection. */
 @Composable
 fun DetailScreen(
     anime: Anime,
@@ -33,9 +31,9 @@ fun DetailScreen(
     onWatch: (Int, String?) -> Unit
 ) {
     var loading by remember(anime.id) { mutableStateOf(true) }
-    var failure by remember(anime.id) { mutableStateOf<String?>(null) }
+    var problem by remember(anime.id) { mutableStateOf<String?>(null) }
     var expanded by remember(anime.id) { mutableStateOf(false) }
-    var showStatuses by remember { mutableStateOf(false) }
+    var statuses by remember { mutableStateOf(false) }
     var episode by remember(anime.id) {
         mutableIntStateOf(library.entry(anime)?.lastEpisode ?: 1)
     }
@@ -43,75 +41,67 @@ fun DetailScreen(
 
     LaunchedEffect(anime.id, refresh) {
         loading = true
-        failure = null
+        problem = null
         try {
             library.saveResolvedStreams(anime, AniLibertyApi.resolve(anime))
         } catch (e: Exception) {
-            failure = e.localizedMessage ?: "Видеосервис недоступен"
+            problem = e.localizedMessage ?: "Не удалось загрузить серии"
         } finally {
             loading = false
         }
     }
-    val episodes = library.variantsFor(anime).map { it.episode }.distinct().sorted()
+    val streams = library.variantsFor(anime)
+    val variants = streams.groupBy { it.episode }
+    val episodes = variants.keys.sorted()
+    val details = streams.mapNotNull { it.details }.distinctBy { it.episode }
     LaunchedEffect(episodes) {
-        if (episodes.isNotEmpty() && episode !in episodes) {
-            episode = episodes.first()
-        }
+        if (episodes.isNotEmpty() && episode !in episodes) episode = episodes.first()
     }
-    val status = library.status(anime)
 
     LazyColumn(
         Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 36.dp)
+        contentPadding = PaddingValues(bottom = 35.dp)
     ) {
         item {
             Box(
                 Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 7.dp)
-                    .height(213.dp).clip(RoundedCornerShape(22.dp))
+                    .height(207.dp).clip(RoundedCornerShape(21.dp))
             ) {
                 Cover(anime.banner.ifBlank { anime.cover }, Modifier.fillMaxSize(), anime.title)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = .24f),
-                    .50f to Color.Black.copy(alpha = .46f),
+                    0f to Color.Black.copy(alpha = .20f),
+                    .5f to Color.Black.copy(alpha = .42f),
                     1f to Color.Black.copy(alpha = .95f)
                 )))
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
-                        .background(Color.Black.copy(alpha = .55f), CircleShape)
-                ) {
-                    Icon(Icons.Rounded.ArrowBack, "Назад", tint = Color.White)
-                }
+                        .background(Color.Black.copy(alpha = .56f), CircleShape)
+                ) { Icon(Icons.Rounded.ArrowBack, "Назад", tint = Color.White) }
                 Row(
-                    Modifier.align(Alignment.BottomStart).padding(14.dp),
+                    Modifier.align(Alignment.BottomStart).padding(13.dp),
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(11.dp)
                 ) {
                     Cover(
                         anime.cover,
-                        Modifier.width(77.dp).height(105.dp).clip(RoundedCornerShape(12.dp)),
-                        anime.title
+                        Modifier.width(77.dp).height(104.dp)
+                            .clip(RoundedCornerShape(13.dp)), anime.title
                     )
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            anime.title, color = Color.White,
-                            fontSize = 19.sp, lineHeight = 22.sp,
-                            maxLines = 3, overflow = TextOverflow.Ellipsis,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Text(anime.title, color = Color.White,
+                            fontSize = 20.sp, lineHeight = 23.sp,
+                            fontWeight = FontWeight.Bold, maxLines = 3,
+                            overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
                             if (anime.year > 0) {
                                 Box(Modifier.size(7.dp)
                                     .background(yearTint(anime.year), CircleShape))
                                 Text(anime.year.toString(), color = Color.White, fontSize = 11.sp)
                             }
-                            Text(
-                                anime.format.ifBlank { "Аниме" },
-                                color = Color.White.copy(alpha = .83f), fontSize = 11.sp
-                            )
+                            Text(anime.format.ifBlank { "Аниме" },
+                                color = Color.White.copy(alpha = .8f), fontSize = 11.sp)
                         }
                     }
                 }
@@ -123,10 +113,11 @@ fun DetailScreen(
                     if (anime.score > 0)
                         MetricChip((anime.score / 10f).toString() + " / 10", Icons.Rounded.Star)
                     MetricChip("AniLibria", Icons.Rounded.PlayCircle)
-                    if (episodes.isNotEmpty())
-                        MetricChip(episodes.size.toString() + " сер.", Icons.Rounded.Movie)
+                    if (episodes.isNotEmpty()) MetricChip(
+                        episodes.size.toString() + " сер.", Icons.Rounded.Movie
+                    )
                 }
-                Spacer(Modifier.height(13.dp))
+                Spacer(Modifier.height(12.dp))
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -138,93 +129,95 @@ fun DetailScreen(
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Icon(Icons.Rounded.PlayArrow, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Смотреть", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            if (library.mergeEpisodes) "Непрерывный просмотр" else "Смотреть",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold
+                        )
                     }
                     FilledTonalIconButton(
                         onClick = { library.toggleFavorite(anime) },
-                        modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp)
+                        modifier = Modifier.size(44.dp),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(
-                            if (library.isFavorite(anime)) Icons.Rounded.Favorite
+                        Icon(if (library.isFavorite(anime)) Icons.Rounded.Favorite
                             else Icons.Rounded.FavoriteBorder,
-                            "Избранное", modifier = Modifier.size(20.dp)
-                        )
+                            "Избранное", Modifier.size(21.dp))
                     }
                     Box {
                         FilledTonalIconButton(
-                            onClick = { showStatuses = true },
+                            onClick = { statuses = true },
                             modifier = Modifier.size(44.dp),
                             shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Icon(Icons.Rounded.Checklist, "Статус", modifier = Modifier.size(20.dp))
-                        }
-                        DropdownMenu(
-                            expanded = showStatuses,
-                            onDismissRequest = { showStatuses = false }
-                        ) {
+                        ) { Icon(Icons.Rounded.Checklist, "Статус", Modifier.size(21.dp)) }
+                        DropdownMenu(expanded = statuses, onDismissRequest = { statuses = false }) {
                             listOf(
                                 "Не смотрел", "В планах", "Смотрю",
                                 "Просмотрено", "Брошено"
-                            ).forEach { option ->
+                            ).forEach { label ->
                                 DropdownMenuItem(
-                                    text = { Text(option) },
+                                    text = { Text(label) },
                                     leadingIcon = {
-                                        if (option == status) Icon(Icons.Rounded.Check, null)
+                                        if (label == library.status(anime))
+                                            Icon(Icons.Rounded.Check, null)
                                     },
                                     onClick = {
-                                        library.setStatus(anime, option)
-                                        showStatuses = false
+                                        library.setStatus(anime, label)
+                                        statuses = false
                                     }
                                 )
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(5.dp))
-                Text("Статус: " + status, fontSize = 11.sp, color = Muted)
             }
         }
         item {
             Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionHeader("Серии", if (loading) "Загружаем с AniLibria"
-                    else if (episodes.isNotEmpty()) "Доступно: " + episodes.size else null)
+                SectionHeader(
+                    "Серии",
+                    when {
+                        loading -> "Загружаем с AniLibria"
+                        episodes.isNotEmpty() -> "Доступно: " + episodes.size
+                        else -> null
+                    }
+                )
             }
         }
         if (episodes.isNotEmpty()) {
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)
-                ) {
-                    items(episodes) { number ->
-                        FlatChip("Серия " + number, selected = number == episode) {
+            items(episodes, key = { it }) { number ->
+                val options = variants[number].orEmpty()
+                val preview = options.minByOrNull { it.popularity }
+                val detailsForEpisode = options.firstOrNull()?.details
+                if (preview != null) {
+                    EpisodeCard(
+                        episode = number,
+                        details = detailsForEpisode,
+                        stream = preview,
+                        selected = number == episode,
+                        onPlay = {
                             episode = number
+                            onWatch(number, null)
                         }
-                    }
+                    )
                 }
             }
         } else {
             item {
                 Column(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                        .background(Panel, RoundedCornerShape(16.dp))
-                        .padding(15.dp)
+                        .background(Panel, RoundedCornerShape(16.dp)).padding(15.dp)
                 ) {
                     if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text(
                         if (loading) "Получаем доступные эпизоды…"
                         else "Серии AniLibria пока не найдены",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = Paper, fontSize = 12.sp
                     )
                     if (!loading) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            failure ?: "Возможно, релиз ещё не опубликован.",
-                            color = Muted, fontSize = 11.sp
-                        )
-                        TextButton(onClick = { refresh++ }) { Text("Обновить") }
+                        Text(problem ?: "Релиз пока не опубликован", color = Muted,
+                            fontSize = 11.sp)
+                        TextButton(onClick = { refresh++ }) { Text("Повторить") }
                     }
                 }
             }
@@ -234,17 +227,16 @@ fun DetailScreen(
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     SectionHeader("Описание")
                     Text(
-                        anime.description, color = Muted,
-                        fontSize = 12.sp, lineHeight = 18.sp,
+                        anime.description,
+                        color = Muted, fontSize = 12.sp, lineHeight = 18.sp,
                         maxLines = if (expanded) Int.MAX_VALUE else 5,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (anime.description.length > 240) {
+                    if (anime.description.length > 240)
                         TextButton(onClick = { expanded = !expanded }) {
                             Text(if (expanded) "Свернуть" else "Читать полностью",
                                 fontSize = 12.sp)
                         }
-                    }
                 }
             }
         }
@@ -257,11 +249,9 @@ fun DetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
                         anime.genres.forEach { genre ->
-                            Box(
-                                Modifier.background(Panel, RoundedCornerShape(11.dp))
-                                    .padding(horizontal = 11.dp, vertical = 8.dp)
-                            ) {
-                                Text(genre, color = Paper, fontSize = 11.sp)
+                            Box(Modifier.background(Panel, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 10.dp, vertical = 7.dp)) {
+                                Text(genre, fontSize = 11.sp, color = Paper)
                             }
                         }
                     }
@@ -269,4 +259,59 @@ fun DetailScreen(
             }
         }
     }
+}
+
+@Composable
+private fun EpisodeCard(
+    episode: Int,
+    details: EpisodeDetails?,
+    stream: StreamVariant,
+    selected: Boolean,
+    onPlay: () -> Unit
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    Row(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (selected) PanelAlt else Panel)
+            .clickable(onClick = onPlay)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Column(Modifier.width(37.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(episode.toString(), color = if (selected) accent else Paper,
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text("№", color = Muted, fontSize = 10.sp)
+        }
+        AnimatedEpisodePreview(
+            stream,
+            Modifier.width(137.dp).height(76.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                details?.title?.ifBlank { "Серия " + episode } ?: "Серия " + episode,
+                color = Paper, fontSize = 12.sp, lineHeight = 16.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Medium
+            )
+            if ((details?.durationMs ?: 0L) > 0L) {
+                Spacer(Modifier.height(5.dp))
+                Text(episodeDuration(details!!.durationMs),
+                    color = Muted, fontSize = 10.sp)
+            }
+            Spacer(Modifier.height(5.dp))
+            Icon(Icons.Rounded.PlayCircle, "Смотреть серию",
+                tint = accent, modifier = Modifier.size(21.dp))
+        }
+    }
+}
+
+fun episodeDuration(durationMs: Long): String {
+    if (durationMs <= 0L) return "Неизвестно"
+    val seconds = durationMs / 1000L
+    return if (seconds >= 3600L)
+        "%d:%02d:%02d".format(seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    else "%d:%02d".format(seconds / 60, seconds % 60)
 }
