@@ -32,7 +32,21 @@ data class LibraryEntry(
     }
 }
 
-/** The source field is always AniLiberty; qualities are fallback HLS variants, not dub choices. */
+
+data class SkipWindow(val startMs: Long, val stopMs: Long) {
+    fun contains(positionMs: Long): Boolean = positionMs in startMs until stopMs
+}
+
+data class EpisodeDetails(
+    val episode: Int,
+    val title: String,
+    val durationMs: Long,
+    val opening: SkipWindow? = null,
+    val ending: SkipWindow? = null,
+    val previewUrl: String = ""
+)
+
+/** AniLibria is the only video source; qualities are HLS variants, not dubs. */
 data class StreamVariant(
     val source: String,
     val episode: Int,
@@ -43,7 +57,8 @@ data class StreamVariant(
     val popularity: Int,
     val timing: String,
     val url: String,
-    val subtitle: String
+    val subtitle: String,
+    val details: EpisodeDetails? = null
 )
 
 class LocalLibrary(private val context: Context) {
@@ -55,6 +70,12 @@ class LocalLibrary(private val context: Context) {
     val catalogProvider: String = "AniLibria"
     val autoFallback: Boolean = true
     val language: String = "ru"
+    var skipOpenings by mutableStateOf(prefs.getBoolean("skip_openings", false))
+        private set
+    var skipEndings by mutableStateOf(prefs.getBoolean("skip_endings", false))
+        private set
+    var mergeEpisodes by mutableStateOf(prefs.getBoolean("merge_episodes", false))
+        private set
     var autoplay by mutableStateOf(prefs.getBoolean("autoplay", false))
         private set
     var seekSeconds by mutableIntStateOf(prefs.getInt("seek", 10))
@@ -111,6 +132,41 @@ class LocalLibrary(private val context: Context) {
             (it.favorite || it.status == "Просмотрено" || it.status == "Смотрю") }
             .flatMap { it.anime.genres }.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.map { it.key }
+
+    fun updateSkipOpenings(value: Boolean) {
+        skipOpenings = value
+        prefs.edit().putBoolean("skip_openings", value).apply()
+    }
+    fun updateSkipEndings(value: Boolean) {
+        skipEndings = value
+        prefs.edit().putBoolean("skip_endings", value).apply()
+    }
+    fun updateMergeEpisodes(value: Boolean) {
+        mergeEpisodes = value
+        prefs.edit().putBoolean("merge_episodes", value).apply()
+    }
+
+    /** Save a separate position for every episode, plus a virtual cumulative position. */
+    fun episodePosition(anime: Anime, episode: Int): Long =
+        prefs.getLong("episode|" + anime.id + "|" + episode, 0L)
+
+    fun totalPosition(anime: Anime): Long =
+        prefs.getLong("total|" + anime.id, 0L)
+
+    fun recordPlayback(
+        anime: Anime, episode: Int, position: Long,
+        virtualPosition: Long, updateLast: Boolean = true
+    ) {
+        prefs.edit()
+            .putLong("episode|" + anime.id + "|" + episode, position.coerceAtLeast(0L))
+            .putLong("total|" + anime.id, virtualPosition.coerceAtLeast(0L))
+            .apply()
+        if (updateLast) rememberPosition(anime, episode, position)
+    }
+
+    fun episodeDetails(anime: Anime): List<EpisodeDetails> =
+        variantsFor(anime).mapNotNull { it.details }.distinctBy { it.episode }
+            .sortedBy { it.episode }
 
     fun updateAutoplay(value: Boolean) {
         autoplay = value

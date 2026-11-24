@@ -211,6 +211,30 @@ object AniLibertyApi {
         return null
     }
 
+
+    private fun skipWindow(root: JSONObject?, durationMs: Long): SkipWindow? {
+        if (root == null || root.isNull("start") || root.isNull("stop")) return null
+        val begin = root.optDouble("start", Double.NaN)
+        val stop = root.optDouble("stop", Double.NaN)
+        if (!begin.isFinite() || !stop.isFinite() || begin < 0 ||
+            stop <= begin || stop - begin > 15 * 60
+        ) return null
+        val a = (begin * 1000).toLong()
+        val b = (stop * 1000).toLong()
+        if (durationMs > 0 && b > durationMs + 1_000L) return null
+        return SkipWindow(a, b)
+    }
+
+    private fun episodePreview(ep: JSONObject): String {
+        val img = ep.optJSONObject("preview") ?: return ""
+        val optimized = img.optJSONObject("optimized")
+        return pathValue(
+            optimized?.optString("preview")?.takeIf { it.isNotBlank() && it != "null" }
+                ?: img.optString("preview").takeIf { it.isNotBlank() && it != "null" }
+                ?: img.optString("src")
+        )
+    }
+
     fun streams(anime: Anime): List<StreamVariant> {
         val id = if (anime.id.startsWith("aniliberty:"))
             anime.id.substringAfter("aniliberty:").toIntOrNull()
@@ -224,8 +248,22 @@ object AniLibertyApi {
             val ep = episodes.optJSONObject(i) ?: continue
             val ordinal = ep.optDouble("ordinal", Double.NaN)
             if (ordinal.isNaN() || ordinal < 1 || ordinal % 1.0 != 0.0) continue
+
             val number = ordinal.toInt()
-            // HLS URLs include geographic and ad settings. Do not alter their query strings.
+            val seconds = ep.optLong("duration", 0L)
+            val durationMs = seconds.coerceIn(0L, 12L * 60 * 60) * 1_000L
+            val episodeTitle = ep.optString("name").takeUnless { it.isBlank() || it == "null" }
+                ?: ep.optString("name_english").takeUnless { it.isBlank() || it == "null" }
+                ?: "Серия $number"
+            val details = EpisodeDetails(
+                episode = number,
+                title = episodeTitle,
+                durationMs = durationMs,
+                opening = skipWindow(ep.optJSONObject("opening"), durationMs),
+                ending = skipWindow(ep.optJSONObject("ending"), durationMs),
+                previewUrl = episodePreview(ep)
+            )
+            // Use only published, per-episode timing metadata from AniLibria.
             for ((quality, name) in listOf(
                 "hls_1080" to "1080p", "hls_720" to "720p", "hls_480" to "480p"
             )) {
@@ -246,7 +284,8 @@ object AniLibertyApi {
                     timing = ep.optString("name").takeIf { it.isNotBlank() && it != "null" }
                         ?: "Оригинальные тайминги",
                     url = stream,
-                    subtitle = ""
+                    subtitle = "",
+                    details = details
                 ))
             }
         }
