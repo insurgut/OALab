@@ -1,14 +1,15 @@
 package ru.lisurgut.oalab
 
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,17 +23,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToLong
 
+/** Fullscreen landscape Media3 player. All streams are AniLiberty HLS. */
 @Composable
 fun PlayerScreen(
     request: PlaybackRequest,
@@ -43,406 +45,250 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val player = remember { ExoPlayer.Builder(context).build() }
-    val latestRequest by rememberUpdatedState(request)
-    val latestSelect by rememberUpdatedState(onSelect)
-    val attempted = remember { mutableStateListOf<String>() }
-    var current by remember { mutableLongStateOf(0L) }
-    var total by remember { mutableLongStateOf(0L) }
+    val activeRequest by rememberUpdatedState(request)
+    val onSelectCurrent by rememberUpdatedState(onSelect)
+    val tried = remember { mutableStateListOf<String>() }
+    var time by remember { mutableLongStateOf(0L) }
+    var length by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
-    var controls by remember { mutableStateOf(true) }
+    var show by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var chooseVoice by remember { mutableStateOf(false) }
-    var audioMenu by remember { mutableStateOf(false) }
-    var subtitleMenu by remember { mutableStateOf(false) }
-    var speedMenu by remember { mutableStateOf(false) }
-    var full by remember { mutableStateOf(false) }
-    var trackVersion by remember { mutableIntStateOf(0) }
-    var urlBefore by remember { mutableStateOf("") }
-    var episodeBefore by remember { mutableIntStateOf(-1) }
-    LaunchedEffect(controls, request.stream.url) {
-        if (controls) { delay(4_500); controls = false }
-    }
-    val sources = library.variantsFor(request.anime)
-    val alternatives = library.rankVariants(
-        sources.filter { it.episode == request.episode },
-        library.voiceSort
-    )
+    var lastEpisode by remember { mutableIntStateOf(-1) }
+    var lastUrl by remember { mutableStateOf("") }
 
-    LaunchedEffect(request.anime.id, request.episode) { attempted.clear() }
     DisposableEffect(player) {
+        onFullscreen(true)
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
-            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) { trackVersion++ }
             override fun onPlayerError(playbackError: PlaybackException) {
-                val active = latestRequest
-                val currentUrl = active.stream.url
-                if (!attempted.contains(currentUrl)) attempted.add(currentUrl)
-                val other = if (library.autoFallback)
-                    library.rankVariants(
-                        library.variantsFor(active.anime).filter { it.episode == active.episode },
-                        library.voiceSort
-                    ).firstOrNull { it.url != currentUrl && it.url !in attempted }
-                else null
-                if (other != null) {
+                val active = activeRequest
+                if (active.stream.url !in tried) tried.add(active.stream.url)
+                val replacement = library.variantsFor(active.anime)
+                    .filter {
+                        it.source == "AniLiberty" && it.episode == active.episode &&
+                            it.url !in tried
+                    }.maxByOrNull { it.popularity }
+                if (replacement != null) {
                     error = null
-                    latestSelect(other)
+                    onSelectCurrent(replacement)
                 } else {
-                    error = (playbackError.localizedMessage ?: "Не удалось воспроизвести видеопоток") +
-                        if (library.autoFallback) " · Других доступных URL нет" else ""
+                    error = playbackError.localizedMessage ?: "Видеопоток недоступен"
+                    show = true
                 }
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED && library.autoplay) {
-                    val next = sources.filter { it.episode == request.episode + 1 }
-                    library.rankVariants(next, library.voiceSort).firstOrNull()?.let(onSelect)
+                    val active = activeRequest
+                    val next = library.variantsFor(active.anime)
+                        .filter {
+                            it.source == "AniLiberty" && it.episode == active.episode + 1
+                        }.maxByOrNull { it.popularity }
+                    if (next != null) onSelectCurrent(next)
                 }
             }
         }
         player.addListener(listener)
         onDispose {
-            library.rememberPosition(request.anime, request.episode, player.currentPosition.coerceAtLeast(0L))
+            val active = activeRequest
+            library.rememberPosition(
+                active.anime, active.episode, player.currentPosition.coerceAtLeast(0L)
+            )
             player.removeListener(listener)
             player.release()
             onFullscreen(false)
         }
     }
+
+    LaunchedEffect(request.episode) { tried.clear() }
+
     LaunchedEffect(request.stream.url, request.episode) {
         val resume = when {
-            urlBefore.isNotBlank() && episodeBefore == request.episode -> player.currentPosition
+            lastUrl.isNotBlank() && lastEpisode == request.episode ->
+                player.currentPosition.coerceAtLeast(0L)
             library.entry(request.anime)?.lastEpisode == request.episode ->
                 library.entry(request.anime)?.lastPosition ?: 0L
             else -> 0L
         }
-        urlBefore = request.stream.url
-        episodeBefore = request.episode
+        lastUrl = request.stream.url
+        lastEpisode = request.episode
         error = null
-        val media = MediaItem.Builder()
-            .setUri(request.stream.url)
-            .apply {
-                if (request.stream.subtitle.isNotBlank()) {
-                    val mime = if (request.stream.subtitle.contains(".srt", ignoreCase = true))
-                        MimeTypes.APPLICATION_SUBRIP else MimeTypes.TEXT_VTT
-                    setSubtitleConfigurations(
-                        listOf(
-                            MediaItem.SubtitleConfiguration.Builder(Uri.parse(request.stream.subtitle))
-                                .setMimeType(mime)
-                                .setLanguage("ru")
-                                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                                .build()
-                        )
-                    )
-                }
-            }
-            .build()
-        player.setMediaItem(media)
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setPreferredAudioLanguage(library.language)
-            .build()
+        val builder = MediaItem.Builder().setUri(request.stream.url)
+        if (request.stream.url.contains(".m3u8", ignoreCase = true))
+            builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+        player.setMediaItem(builder.build())
         player.prepare()
         if (resume > 0L) player.seekTo(resume)
         player.playWhenReady = true
     }
+
     LaunchedEffect(player, request.episode) {
-        var ticks = 0
+        var count = 0
         while (isActive) {
-            current = player.currentPosition.coerceAtLeast(0L)
-            total = player.duration.takeIf { it > 0 } ?: 0L
-            if (++ticks % 10 == 0 && current > 0L)
-                library.rememberPosition(request.anime, request.episode, current)
+            time = player.currentPosition.coerceAtLeast(0L)
+            length = player.duration.takeIf { it > 0L } ?: 0L
+            if (++count % 12 == 0 && time > 0L)
+                library.rememberPosition(request.anime, request.episode, time)
             delay(500)
         }
     }
-    val audioLanguages = remember(trackVersion) {
-        player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
-            .flatMap { group ->
-                (0 until group.length).map { index ->
-                    group.getTrackFormat(index).language ?: "und"
-                }
-            }.distinct()
-    }
-    val subtitleLanguages = remember(trackVersion) {
-        player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-            .flatMap { group ->
-                (0 until group.length).map { index ->
-                    group.getTrackFormat(index).language ?: "und"
-                }
-            }.distinct()
+    LaunchedEffect(show, request.stream.url) {
+        if (show && error == null) {
+            delay(4_000)
+            show = false
+        }
     }
 
-    Column(
-        Modifier.fillMaxSize().background(Ink).statusBarsPadding().navigationBarsPadding()
-    ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val landscape = maxWidth > maxHeight && maxHeight < 520.dp
-            Box(
-                modifier = if (landscape)
-                    Modifier.fillMaxWidth().height(maxHeight - 14.dp)
-                else Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                contentAlignment = Alignment.Center
-            ) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            useController = false
-                            keepScreenOn = true
-                            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            this.player = player
-                        }
-                    },
-                    update = { it.player = player },
-                    modifier = Modifier.fillMaxSize().background(Color.Black)
+    val accent = MaterialTheme.colorScheme.primary
+    val accentContent = MaterialTheme.colorScheme.onPrimary
+    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
+                    keepScreenOn = true
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    this.player = player
+                }
+            },
+            update = { it.player = player },
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(Modifier.fillMaxSize().clickable { show = !show })
+        if (show) {
+            Box(Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = .65f),
+                    .28f to Color.Transparent,
+                    .70f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = .78f)
                 )
-                Box(
-                    Modifier.fillMaxSize().clickable { controls = !controls }
-                )
-                if (controls) {
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(
-                                listOf(Color.Black.copy(alpha = .74f), Color.Transparent, Color.Black.copy(alpha = .87f))
-                            )
-                        )
-                    )
-                    Row(
-                        Modifier.align(Alignment.TopStart).fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Rounded.ArrowBack, "Назад", tint = Color.White)
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                request.anime.title,
-                                color = Color.White, fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text("Серия " + request.episode + " · " + request.stream.team, fontSize = 10.sp, color = Color.White.copy(alpha=.76f))
-                        }
-                        IconButton(onClick = { full = !full; onFullscreen(full) }) {
-                            Icon(
-                                if (full) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                                "Полный экран", tint = Color.White
-                            )
-                        }
-                    }
-                    Row(
-                        Modifier.align(Alignment.Center),
-                        horizontalArrangement = Arrangement.spacedBy(17.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { player.seekTo((player.currentPosition - library.seekSeconds * 1000L).coerceAtLeast(0L)) }) {
-                            Icon(Icons.Rounded.Replay10, "Назад", Modifier.size(32.dp), tint = Color.White)
-                        }
-                        IconButton(
-                            onClick = { if (player.isPlaying) player.pause() else player.play() },
-                            modifier = Modifier.size(47.dp).clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                        ) {
-                            Icon(
-                                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                if (playing) "Пауза" else "Играть",
-                                Modifier.size(29.dp), tint = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                        IconButton(onClick = {
-                            val target = player.currentPosition + library.seekSeconds * 1000L
-                            player.seekTo(if (total > 0L) target.coerceAtMost(total) else target)
-                        }) {
-                            Icon(Icons.Rounded.Forward10, "Вперёд", Modifier.size(32.dp), tint = Color.White)
-                        }
-                    }
-                    Column(
-                        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                            .padding(start = 15.dp, end = 15.dp, bottom = 6.dp)
-                    ) {
-                        Slider(
-                            value = if (total > 0) (current.toFloat() / total).coerceIn(0f, 1f) else 0f,
-                            onValueChange = { fraction ->
-                                if (total > 0L) {
-                                    val position = (fraction * total).roundToLong()
-                                    current = position
-                                    player.seekTo(position)
-                                }
-                            },
-                            enabled = total > 0,
-                            modifier = Modifier.fillMaxWidth().height(24.dp),
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Muted.copy(alpha = .45f)
-                            )
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                formatTime(current) + " / " + formatTime(total),
-                                fontSize = 10.sp, color = Color.White,
-                                modifier = Modifier.weight(1f)
-                            )
-                            PlayerMenuButton(Icons.Rounded.GraphicEq, "Озвучка") { chooseVoice = true }
-                            Box {
-                                PlayerMenuButton(Icons.Rounded.Language, "Аудиодорожки") { audioMenu = true }
-                                DropdownMenu(
-                                    expanded = audioMenu,
-                                    onDismissRequest = { audioMenu = false },
-                                    containerColor = PanelAlt
-                                ) {
-                                    audioLanguages.forEach { lang ->
-                                        DropdownMenuItem(
-                                            text = { Text(lang.uppercase()) },
-                                            onClick = {
-                                                player.trackSelectionParameters =
-                                                    player.trackSelectionParameters.buildUpon()
-                                                        .setPreferredAudioLanguage(lang).build()
-                                                audioMenu = false
-                                            }
-                                        )
-                                    }
-                                    if (audioLanguages.isEmpty())
-                                        DropdownMenuItem(text = { Text("Нет других дорожек") }, onClick = { audioMenu = false })
-                                }
-                            }
-                            Box {
-                                PlayerMenuButton(Icons.Rounded.Subtitles, "Субтитры") { subtitleMenu = true }
-                                DropdownMenu(
-                                    expanded = subtitleMenu,
-                                    onDismissRequest = { subtitleMenu = false },
-                                    containerColor = PanelAlt
-                                ) {
-                                    DropdownMenuItem(text = { Text("Выкл") }, onClick = {
-                                        player.trackSelectionParameters = player.trackSelectionParameters
-                                            .buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-                                        subtitleMenu = false
-                                    })
-                                    subtitleLanguages.forEach { lang ->
-                                        DropdownMenuItem(text = { Text(lang.uppercase()) }, onClick = {
-                                            player.trackSelectionParameters = player.trackSelectionParameters
-                                                .buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                                .setPreferredTextLanguage(lang).build()
-                                            subtitleMenu = false
-                                        })
-                                    }
-                                }
-                            }
-                            Box {
-                                PlayerMenuButton(Icons.Rounded.Speed, "Скорость") { speedMenu = true }
-                                DropdownMenu(
-                                    expanded = speedMenu,
-                                    onDismissRequest = { speedMenu = false },
-                                    containerColor = PanelAlt
-                                ) {
-                                    listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                                        DropdownMenuItem(text = { Text(speed.toString() + "×") }, onClick = {
-                                            player.setPlaybackSpeed(speed)
-                                            speedMenu = false
-                                        })
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if (error != null) {
-                    Column(
-                        Modifier.align(Alignment.Center).padding(22.dp)
-                            .clip(RoundedCornerShape(20.dp)).background(PanelAlt.copy(alpha = .97f))
-                            .padding(15.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(Icons.Rounded.ErrorOutline, null, tint = Paper)
-                        Spacer(Modifier.height(8.dp))
-                        Text("Ошибка воспроизведения", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Spacer(Modifier.height(5.dp))
-                        Text(error!!.take(220), fontSize = 11.sp, color = Muted)
-                        Spacer(Modifier.height(10.dp))
-                        TextButton(onClick = { error = null; player.prepare(); player.play() }) {
-                            Text("Повторить")
-                        }
-                    }
-                }
-            }
-        }
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Eyebrow("Сейчас играет")
-            Spacer(Modifier.height(8.dp))
-            Text(request.anime.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines=2, overflow=TextOverflow.Ellipsis)
-            Spacer(Modifier.height(9.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                MetricChip("Серия " + request.episode, Icons.Rounded.Movie)
-                Spacer(Modifier.width(8.dp))
-                MetricChip(request.stream.language.uppercase(), Icons.Rounded.Language)
-                if (DownloadSupport.canDownload(request.stream)) {
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            try {
-                                DownloadSupport.enqueue(context,request.anime,request.stream)
-                                Toast.makeText(context,"Загрузка добавлена в очередь",Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context,e.localizedMessage ?: "Ошибка загрузки",Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(13.dp),
-                        contentPadding = PaddingValues(horizontal = 9.dp)
-                    ) {
-                        Icon(Icons.Rounded.Download,"Скачать",Modifier.size(17.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("MP4",fontSize=11.sp)
-                    }
-                }
-            }
-            Spacer(Modifier.height(9.dp))
+            ))
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel)
-                    .clickable { chooseVoice = true }.padding(11.dp),
+                Modifier.align(Alignment.TopStart).fillMaxWidth()
+                    .padding(start = 9.dp, end = 15.dp, top = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Rounded.GraphicEq, null, tint = Paper)
-                Spacer(Modifier.width(13.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(request.stream.team, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        request.stream.source + " · " + request.stream.voices + " голоса",
-                        color = Muted, fontSize = 12.sp
-                    )
+                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.ArrowBack, "Назад", tint = Color.White,
+                        modifier = Modifier.size(20.dp))
                 }
-                Icon(Icons.Rounded.UnfoldMore, "Изменить")
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    request.anime.title, modifier = Modifier.weight(1f),
+                    color = Color.White, fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.width(10.dp))
+                Text("Серия " + request.episode, color = Color.White.copy(alpha = .82f),
+                    fontSize = 10.sp)
             }
+            // One contiguous control with 64 / 154 / 64 dp touch surfaces.
+            Row(
+                Modifier.align(Alignment.Center)
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, Color.White.copy(alpha = .2f), RoundedCornerShape(14.dp))
+                    .background(Color.Black.copy(alpha = .7f)),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                Box(Modifier.width(64.dp).height(42.dp).clickable {
+                    player.seekTo(
+                        (player.currentPosition - library.seekSeconds * 1_000L)
+                            .coerceAtLeast(0L)
+                    )
+                    show = true
+                }, contentAlignment = Alignment.Center) {
+                    Text("−" + library.seekSeconds + "с", color = Color.White,
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+                Box(
+                    Modifier.width(154.dp).height(42.dp)
+                        .background(accent)
+                        .clickable { if (player.isPlaying) player.pause() else player.play() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            if (playing) "Пауза" else "Воспроизвести",
+                            tint = accentContent, modifier = Modifier.size(21.dp)
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(if (playing) "Пауза" else "Смотреть",
+                            color = accentContent, fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp)
+                    }
+                }
+                Box(Modifier.width(64.dp).height(42.dp).clickable {
+                    val target = player.currentPosition + library.seekSeconds * 1_000L
+                    player.seekTo(if (length > 0L) target.coerceAtMost(length) else target)
+                    show = true
+                }, contentAlignment = Alignment.Center) {
+                    Text("+" + library.seekSeconds + "с", color = Color.White,
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 6.dp)) {
+                Slider(
+                    value = if (length > 0L)
+                        (time.toFloat() / length).coerceIn(0f, 1f) else 0f,
+                    onValueChange = { progress ->
+                        if (length > 0L) {
+                            val target = (progress * length).roundToLong()
+                            time = target
+                            player.seekTo(target)
+                        }
+                    },
+                    enabled = length > 0L,
+                    modifier = Modifier.fillMaxWidth().height(20.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = accent, activeTrackColor = accent,
+                        inactiveTrackColor = Color.White.copy(alpha = .35f)
+                    )
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(playerTime(time), color = Color.White.copy(alpha = .8f), fontSize = 10.sp)
+                    Text(playerTime(length), color = Color.White.copy(alpha = .8f), fontSize = 10.sp)
+                }
+            }
+        }
 
+        if (error != null) {
+            Column(
+                Modifier.align(Alignment.Center).padding(20.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface).padding(15.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Ошибка воспроизведения", fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(5.dp))
+                Text(error!!.take(160), maxLines = 3, fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = {
+                    tried.clear()
+                    error = null
+                    player.prepare()
+                    player.play()
+                }) {
+                    Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Повторить", fontSize = 12.sp)
+                }
+            }
         }
     }
-    if (chooseVoice) {
-        VoiceSelectorSheet(
-            variants = alternatives,
-            selected = request.stream,
-            library = library,
-            onDismiss = { chooseVoice = false },
-            onSelect = { stream ->
-                chooseVoice = false
-                onSelect(stream)
-            }
-        )
-    }
 }
 
-@Composable
-private fun PlayerMenuButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    onClick: () -> Unit
-) {
-    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(19.dp))
-    }
-}
-
-private fun formatTime(millis: Long): String {
-    val seconds = millis.coerceAtLeast(0L) / 1000
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val sec = seconds % 60
-    return if (hours > 0L)
-        "%d:%02d:%02d".format(hours, minutes, sec)
-    else "%02d:%02d".format(minutes, sec)
+private fun playerTime(millis: Long): String {
+    val seconds = millis.coerceAtLeast(0L) / 1_000
+    val hours = seconds / 3_600
+    val minutes = (seconds % 3_600) / 60
+    val remainder = seconds % 60
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, remainder)
+    else "%02d:%02d".format(minutes, remainder)
 }
