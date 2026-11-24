@@ -196,15 +196,17 @@ fun BottomPill(
         Triple("Главная", Icons.Rounded.Home, 0),
         Triple("Каталог", Icons.Rounded.Search, 1),
         Triple("Моё", Icons.Rounded.Bookmarks, 2),
-        Trip    val compact = LocalConfiguration.current.screenWidthDp < 390
+        Triple("Для тебя", Icons.Rounded.AutoAwesome, 3),
+        Triple("Настройки", Icons.Rounded.Settings, 4)
+    )
+    val compact = LocalConfiguration.current.screenWidthDp < 390
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding()
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 9.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
-            Modifier
-                .shadow(10.dp, CircleShape)
+            Modifier.shadow(10.dp, CircleShape)
                 .clip(CircleShape)
                 .border(1.dp, Edge.copy(alpha = .65f), CircleShape)
                 .background(PanelAlt)
@@ -221,28 +223,27 @@ fun BottomPill(
                     label = "Selected navigation capsule"
                 )
                 Row(
-                    Modifier
-                        .clip(CircleShape)
+                    Modifier.clip(CircleShape)
                         .background(background)
                         .clickable { onSelect(index) }
                         .height(44.dp)
-                        .widthIn(min = 41.dp)
-                        .padding(horizontal = if (active) 11.dp else 9.dp),
+                        .widthIn(min = 40.dp)
+                        .padding(horizontal = if (active) 10.dp else 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         icon, name,
-                        tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else Muted,
+                        tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer
+                            else Muted,
                         modifier = Modifier.size(19.dp)
                     )
-                    // The selected tab ALWAYS shows its name, even on narrow phones
-                    // and when the update chip is visible.
+                    // Always expand the active capsule and display the tab name.
                     AnimatedVisibility(visible = active) {
                         Text(
                             name,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(start = 6.dp),
+                            modifier = Modifier.padding(start = 5.dp),
                             fontSize = if (compact) 10.sp else 11.sp,
                             maxLines = 1,
                             fontWeight = FontWeight.SemiBold
@@ -252,8 +253,7 @@ fun BottomPill(
             }
             AnimatedVisibility(visible = updateAvailable) {
                 Box(
-                    Modifier
-                        .clip(CircleShape)
+                    Modifier.clip(CircleShape)
                         .background(MaterialTheme.colorScheme.tertiaryContainer)
                         .clickable(onClick = onOpenUpdate)
                         .size(42.dp),
@@ -264,11 +264,6 @@ fun BottomPill(
                         tint = MaterialTheme.colorScheme.onTertiaryContainer,
                         modifier = Modifier.size(19.dp)
                     )
-                }
-            }
-        }
-    }sp, fontWeight = FontWeight.SemiBold)
-                    }
                 }
             }
         }

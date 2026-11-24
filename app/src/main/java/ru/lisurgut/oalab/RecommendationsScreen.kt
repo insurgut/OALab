@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -294,7 +295,9 @@ fun RecommendationsScreen(library: LocalLibrary, onOpen: (Anime) -> Unit) {
                             color = Muted, fontSize = 11.sp
                         )
                         Spacer(Modifier.height(8.dp))
-                        TextButton(onClick = if (filterCount > 0) reset else ({ refresh++ })) {
+                        TextButton(onClick = {
+                            if (filterCount > 0) reset() else refresh += 1
+                        }) {
                             Text(if (filterCount > 0) "Сбросить фильтры" else "Повторить")
                         }
                         if (hidden.isNotEmpty()) {
