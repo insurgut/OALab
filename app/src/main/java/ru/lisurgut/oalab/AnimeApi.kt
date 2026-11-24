@@ -111,7 +111,6 @@ object AnimeApi {
             )
         }
         val providers = listOf(provider)
-            else listOf(provider)
         var failure: Exception? = null
         for (source in providers) {
             try {
