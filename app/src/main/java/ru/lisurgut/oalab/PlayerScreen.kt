@@ -102,6 +102,8 @@ fun PlayerScreen(
     var previewEpisode by remember { mutableIntStateOf(0) }
     var lastGestureSeek by remember { mutableLongStateOf(0L) }
     var gestureHint by remember { mutableStateOf("") }
+    var gestureCount by remember { mutableIntStateOf(0) }
+    var showGestureHint by remember { mutableStateOf(false) }
     var speedBoost by remember { mutableStateOf(false) }
     var retryPending by remember { mutableStateOf(false) }
     var retryAttempts by remember { mutableIntStateOf(0) }
@@ -306,6 +308,14 @@ fun PlayerScreen(
         }
     }
 
+    LaunchedEffect(gestureCount) {
+        if (gestureCount > 0) {
+            showGestureHint = true
+            delay(900)
+            showGestureHint = false
+        }
+    }
+
     LaunchedEffect(retryPending, retryAttempts) {
         if (retryPending) {
             delay((retryAttempts * 1_500L).coerceAtMost(6_000L))
@@ -378,6 +388,7 @@ fun PlayerScreen(
         lastGestureSeek = delta
         gestureHint = if (delta > 0) "+" + delta / 1000L + "с"
         else delta.div(1000L).toString() + "с"
+        gestureCount++
     }
     val gestureLayer = PlayerGestureLayer(
         playerKey = request.anime.id,
@@ -423,6 +434,23 @@ fun PlayerScreen(
                     color = Color.White, fontSize = 10.sp)
             }
         }
+        AnimatedVisibility(
+            visible = showGestureHint && !pipMode,
+            modifier = if (lastGestureSeek < 0)
+                Modifier.align(Alignment.CenterStart).padding(start = 24.dp)
+            else Modifier.align(Alignment.CenterEnd).padding(end = 24.dp),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Text(
+                gestureHint,
+                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.background(
+                    Color.Black.copy(alpha = .64f), RoundedCornerShape(12.dp)
+                ).padding(horizontal = 17.dp, vertical = 10.dp)
+            )
+        }
+
         if (speedBoost && !pipMode) {
             Text(
                 "2×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
