@@ -49,7 +49,12 @@ object EpisodeFrames {
         File(context.cacheDir, "episode_frames").apply { mkdirs() }
 
     private fun file(context: Context, url: String, frame: Int): File {
-        val hash = MessageDigest.getInstance("SHA-256").digest(url.toByteArray())
+        // Tokens in HLS query strings expire. The canonical path is stable.
+        val stable = try {
+            val u = URI(url)
+            u.scheme + "://" + u.host + u.path
+        } catch (_: Exception) { url }
+        val hash = MessageDigest.getInstance("SHA-256").digest(stable.toByteArray())
             .joinToString("") { "%02x".format(it) }.take(32)
         return File(folder(context), hash + "_" + frame + ".jpg")
     }
@@ -181,6 +186,17 @@ object EpisodeFrames {
         }
     }
 
+    suspend fun cachedFrame(
+        context: Context, stream: StreamVariant, timeMs: Long
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        val duration = stream.details?.durationMs ?: return@withContext null
+        if (duration <= 0L) return@withContext null
+        val index = ((timeMs.toDouble() / duration) * 10)
+            .toInt().coerceIn(0, 9)
+        val image = file(context, stream.url, index)
+        if (image.isFile) BitmapFactory.decodeFile(image.absolutePath) else null
+    }
+
     suspend fun load(
         context: Context, stream: StreamVariant,
         onFrame: suspend (Int, Bitmap) -> Unit
@@ -246,7 +262,11 @@ fun AnimatedEpisodePreview(
     }
     var selected by remember(stream.url) { mutableIntStateOf(0) }
     LaunchedEffect(stream.url, active) {
-        if (!active) return@LaunchedEffect
+        if (!active) {
+            // Release decoded screenshots once the lazy card leaves the viewport.
+            for (i in frames.indices) frames[i] = null
+            return@LaunchedEffect
+        }
         EpisodeFrames.load(context.applicationContext, stream) { index, bitmap ->
             withContext(Dispatchers.Main) { frames[index] = bitmap }
         }

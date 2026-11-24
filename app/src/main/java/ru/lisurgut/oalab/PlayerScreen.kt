@@ -81,7 +81,7 @@ fun PlayerScreen(
     val merged = library.mergeEpisodes
     val queue = if (merged) {
         streams.groupBy { it.episode }.toSortedMap().values.mapNotNull { choices ->
-            choices.maxByOrNull { it.popularity }
+            library.selectQuality(choices)
         }.map {
             if (it.episode == request.episode) request.stream else it
         }
@@ -98,8 +98,13 @@ fun PlayerScreen(
     var controlsLocked by remember { mutableStateOf(false) }
     var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
     var scrubbing by remember { mutableStateOf(false) }
+    var pendingSeek by remember { mutableStateOf<Long?>(null) }
+    var previewEpisode by remember { mutableIntStateOf(0) }
     var lastGestureSeek by remember { mutableLongStateOf(0L) }
     var gestureHint by remember { mutableStateOf("") }
+    var speedBoost by remember { mutableStateOf(false) }
+    var retryPending by remember { mutableStateOf(false) }
+    var retryAttempts by remember { mutableIntStateOf(0) }
     var buffering by remember { mutableStateOf(false) }
     var bufferAheadMs by remember { mutableLongStateOf(0L) }
     var controls by remember { mutableStateOf(true) }
@@ -148,6 +153,9 @@ fun PlayerScreen(
             }
             override fun onPlaybackStateChanged(state: Int) {
                 buffering = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_READY && player.isPlaying) {
+                    retryAttempts = 0
+                }
                 if (state == Player.STATE_ENDED) {
                     val completed = latestQueue.getOrNull(
                         player.currentMediaItemIndex.coerceAtLeast(0)
@@ -164,6 +172,15 @@ fun PlayerScreen(
                 }
             }
             override fun onPlayerError(cause: PlaybackException) {
+                val networkProblem = cause.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    cause.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+                if (networkProblem && retryAttempts < 3) {
+                    retryAttempts++
+                    retryPending = true
+                    error = "Восстанавливаем соединение…"
+                    controls = true
+                    return
+                }
                 val current = latestQueue.getOrNull(player.currentMediaItemIndex)
                     ?: now.stream
                 if (current.url !in tried) tried.add(current.url)
@@ -222,6 +239,8 @@ fun PlayerScreen(
         oldMediaIndex = start
         tried.clear()
         error = null
+        retryAttempts = 0
+        retryPending = false
         player.setMediaItems(queue.map(::mediaItem), start, savedPosition)
         player.prepare()
         player.playWhenReady = true
@@ -266,8 +285,37 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controls, request.stream.url) {
-        if (controls && error == null) {
+    LaunchedEffect(retryPending, retryAttempts) {
+        if (retryPending) {
+            delay((retryAttempts * 1_500L).coerceAtMost(6_000L))
+            retryPending = false
+            error = null
+            if (player.playbackState == Player.STATE_IDLE) {
+                player.prepare()
+                player.playWhenReady = true
+            }
+        }
+    }
+
+    LaunchedEffect(pendingSeek, queue.map { it.url }) {
+        val target = pendingSeek
+        if (target == null) {
+            thumbnail = null
+            return@LaunchedEffect
+        }
+        delay(70)
+        val location = if (merged)
+            EpisodeTimeline.locate(durations, target)
+        else EpisodeSeek(currentIndex, target)
+        val stream = location?.let { queue.getOrNull(it.index) }
+        previewEpisode = stream?.episode ?: episode
+        thumbnail = if (stream != null && location != null)
+            EpisodeFrames.cachedFrame(context, stream, location.positionMs)
+        else null
+    }
+
+    LaunchedEffect(controls, request.stream.url, controlsLocked) {
+        if (controls && !controlsLocked && error == null) {
             delay(4_000)
             controls = false
         }
@@ -316,6 +364,7 @@ fun PlayerScreen(
         onTap = { if (!controlsLocked) controls = !controls },
         onSeek = seekGesture,
         onHold = { held ->
+            speedBoost = held
             player.setPlaybackSpeed(if (held) 2f else 1f)
         },
         enabled = !controlsLocked && !pipMode
@@ -335,6 +384,33 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
         if (!pipMode) Box(gestureLayer)
+
+        if (buffering && !pipMode && error == null) {
+            Row(
+                Modifier.align(Alignment.TopEnd)
+                    .padding(top = 39.dp, end = 18.dp)
+                    .background(Color.Black.copy(alpha = .62f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp), strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(5.dp))
+                Text("Буфер " + (bufferAheadMs / 1000L) + " с",
+                    color = Color.White, fontSize = 10.sp)
+            }
+        }
+        if (speedBoost && !pipMode) {
+            Text(
+                "2×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                modifier = Modifier.align(Alignment.TopCenter)
+                    .padding(top = 36.dp)
+                    .background(Color.Black.copy(alpha = .68f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
+            )
+        }
 
         if (controls && !pipMode) {
             Box(Modifier.fillMaxSize().background(
@@ -379,7 +455,7 @@ fun PlayerScreen(
                         tint = Color.White, modifier = Modifier.size(18.dp)
                     )
                 }
-                if (Build.VERSION.SDK_INT >= 26) {
+                if (Build.VERSION.SDK_INT >= 26 && library.enablePip) {
                     IconButton(
                         onClick = {
                             val activity = context as? Activity
@@ -460,13 +536,45 @@ fun PlayerScreen(
                         }
                     }
                 }
+                if (pendingSeek != null) {
+                    Row(
+                        Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (thumbnail != null) {
+                            Image(
+                                bitmap = thumbnail!!.asImageBitmap(),
+                                contentDescription = "Кадр на шкале",
+                                modifier = Modifier.width(95.dp).height(54.dp)
+                                    .clip(RoundedCornerShape(9.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Column {
+                            Text(episodeDuration(pendingSeek ?: 0L),
+                                fontSize = 11.sp, color = Color.White,
+                                fontWeight = FontWeight.Bold)
+                            Text("Серия " + previewEpisode, fontSize = 10.sp,
+                                color = Color.White.copy(alpha = .7f))
+                        }
+                    }
+                }
                 Slider(
                     value = if (displayDuration > 0L)
-                        (displayedPosition.toFloat() / displayDuration).coerceIn(0f, 1f)
+                        ((pendingSeek ?: displayedPosition).toFloat() / displayDuration)
+                            .coerceIn(0f, 1f)
                     else 0f,
                     onValueChange = { fraction ->
-                        if (displayDuration > 0L)
-                            seek((fraction * displayDuration).roundToLong())
+                        if (displayDuration > 0L) {
+                            pendingSeek = (fraction * displayDuration).roundToLong()
+                            scrubbing = true
+                        }
+                    },
+                    onValueChangeFinished = {
+                        pendingSeek?.let { seek(it) }
+                        pendingSeek = null
+                        scrubbing = false
                     },
                     enabled = displayDuration > 0L,
                     modifier = Modifier.fillMaxWidth().height(22.dp),

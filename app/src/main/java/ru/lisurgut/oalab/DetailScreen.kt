@@ -205,7 +205,7 @@ fun DetailScreen(
                         details = detailsForEpisode,
                         stream = preview,
                         selected = number == episode,
-                        active = isVisible,
+                        active = isVisible && !library.dataSaver,
                         progress = library.progressPercent(
                             anime, number, detailsForEpisode?.durationMs ?: 0L
                         ),

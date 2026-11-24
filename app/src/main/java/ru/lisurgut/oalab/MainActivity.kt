@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
                     pipMode = pipMode,
                     fullscreen = { enabled ->
                         immersivePlayer = enabled
-                        configurePip(enabled)
+                        configurePip(enabled && library.enablePip)
                         if (!pipMode) {
                             requestedOrientation = if (enabled)
                                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
