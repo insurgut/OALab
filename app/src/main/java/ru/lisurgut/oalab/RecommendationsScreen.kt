@@ -27,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 /** Personal, offline-scored recommendations; only AniLibria catalog pages are fetched. */
 @Composable
@@ -42,7 +43,9 @@ fun RecommendationsScreen(
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
-    var mode by remember { mutableStateOf(RecommendationMode.PERSONAL) }
+    val mode = library.recommendationMode
+    val snackbarHost = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
     LaunchedEffect(refresh) {
@@ -117,89 +120,58 @@ fun RecommendationsScreen(
             .take(10) + fromProvider).distinct().take(18)
     }
 
-    LazyColumn(
+    Box(Modifier.fillMaxSize().background(Ink)) {
+        LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(
             start = 15.dp, end = 15.dp, top = 14.dp, bottom = 116.dp
         ),
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "Для тебя", color = Paper, fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        if (rated == 0)
-                            "Начни смотреть аниме — рекомендации станут точнее"
-                        else "Учитываю " + rated + " аниме из твоей истории",
-                        color = Muted, fontSize = 11.sp
-                    )
-                }
-                FilledTonalIconButton(
-                    onClick = { refresh++ }, enabled = !loading,
-                    modifier = Modifier.size(38.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.Refresh,
-                        "Обновить подборку",
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
-        item {
+        item(key = "reco-header") {
             Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                listOf(
-                    RecommendationMode.PERSONAL to "Для тебя",
-                    RecommendationMode.GENRES to "По жанрам",
-                    RecommendationMode.DISCOVER to "Открытия"
-                ).forEach { (option, text) ->
-                    Box(Modifier.weight(1f)) {
-                        FlatChip(text, selected = mode == option) { mode = option }
-                    }
+                Column(Modifier.weight(1f)) {
+                    Eyebrow("ТВОЯ ПОДБОРКА")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Что посмотреть", color = Paper, fontSize = 26.sp,
+                        letterSpacing = (-1.0).sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
-            }
-        }
-        item {
-            if (availableGenres.isNotEmpty()) {
-                Text(
-                    "Интересующие жанры", color = Paper,
-                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 3.dp)
-                )
-                Spacer(Modifier.height(7.dp))
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                IconButton(
+                    onClick = { refresh++ }, enabled = !loading,
+                    modifier = Modifier.size(39.dp)
+                        .clip(RoundedCornerShape(13.dp)).background(Panel)
                 ) {
-                    availableGenres.forEach { genre ->
-                        FilterChip(
-                            selected = genre in library.recommendationGenres,
-                            onClick = { library.toggleRecommendationGenre(genre) },
-                            label = {
-                                Text(
-                                    genre, fontSize = 11.sp,
-                                    maxLines = 1
-                                )
-                            },
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
+                    Icon(Icons.Rounded.Refresh, "Обновить подборку",
+                        tint = Paper, modifier = Modifier.size(19.dp))
                 }
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    "Выбирай жанры: они влияют на порядок и состав подборки",
-                    color = Muted, fontSize = 10.sp
-                )
             }
+            Text(
+                if (rated == 0)
+                    "Начни с любимых жанров — подборка подстроится под тебя"
+                else "По мотивам " + rated + " аниме из твоей истории",
+                color = Muted, fontSize = 12.sp, lineHeight = 16.sp
+            )
+            Spacer(Modifier.height(15.dp))
+        }
+        item(key = "reco-tabs") {
+            RecommendationTabs(mode, library::updateRecommendationMode)
+            Spacer(Modifier.height(14.dp))
+        }
+        item(key = "reco-taste") {
+            RecommendationTasteEditor(
+                genres = availableGenres,
+                chosen = library.recommendationGenres,
+                onToggle = library::toggleRecommendationGenre,
+                onReset = library::clearRecommendationGenres
+            )
+            Spacer(Modifier.height(17.dp))
         }
         item {
             if (loading) {
@@ -215,41 +187,75 @@ fun RecommendationsScreen(
                 )
             }
         }
-        item {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    when (mode) {
-                        RecommendationMode.PERSONAL -> "Подобрано под твои интересы"
-                        RecommendationMode.GENRES -> "По любимым жанрам"
-                        RecommendationMode.DISCOVER -> "Попробуй что-то новое"
-                    },
-                    modifier = Modifier.weight(1f),
-                    color = Paper, fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
+        item(key = "reco-spotlight") {
+            suggestions.firstOrNull()?.let { best ->
+                RecommendationSpotlightCard(
+                    recommendation = best,
+                    favorite = library.isFavorite(best.anime),
+                    onOpen = { onOpen(best.anime) },
+                    onFavorite = { library.toggleFavorite(best.anime) }
                 )
-                if (library.hiddenRecommendations.isNotEmpty()) {
-                    TextButton(
-                        onClick = library::resetHiddenRecommendations,
-                        contentPadding = PaddingValues(horizontal = 5.dp)
-                    ) {
-                        Text("Вернуть скрытые", fontSize = 10.sp)
-                    }
-                }
+                Spacer(Modifier.height(21.dp))
             }
         }
-
+        item(key = "reco-list-title") {
+            if (suggestions.size > 1) {
+                Row(
+                    Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        when (mode) {
+                            RecommendationMode.PERSONAL -> "Ещё для тебя"
+                            RecommendationMode.GENRES -> "По твоим жанрам"
+                            RecommendationMode.DISCOVER -> "Стоит попробовать"
+                        },
+                        color = Paper, fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-.45).sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text((suggestions.size - 1).toString() + " вариантов",
+                        color = Muted, fontSize = 11.sp)
+                }
+                Spacer(Modifier.height(7.dp))
+            }
+        }
         if (suggestions.isNotEmpty()) {
-            items(suggestions, key = { it.anime.id }) { recommendation ->
-                RecommendationItem(
+            items(suggestions.drop(1), key = { it.anime.id }) { recommendation ->
+                RecommendationCompactItem(
                     recommendation = recommendation,
                     favorite = library.isFavorite(recommendation.anime),
                     onOpen = { onOpen(recommendation.anime) },
                     onFavorite = { library.toggleFavorite(recommendation.anime) },
-                    onHide = { library.hideRecommendation(recommendation.anime) }
+                    onHide = {
+                        val anime = recommendation.anime
+                        library.hideRecommendation(anime)
+                        scope.launch {
+                            val response = snackbarHost.showSnackbar(
+                                message = "Скрыто из рекомендаций",
+                                actionLabel = "Отменить",
+                                withDismissAction = true,
+                                duration = SnackbarDuration.Short
+                            )
+                            if (response == SnackbarResult.ActionPerformed) {
+                                library.unhideRecommendation(anime)
+                            }
+                        }
+                    }
                 )
+            }
+            item(key = "reco-info") {
+                Text(
+                    "История остаётся на устройстве. Просмотренные аниме не повторяются.",
+                    color = Muted, fontSize = 10.sp, lineHeight = 14.sp,
+                    modifier = Modifier.padding(top = 15.dp)
+                )
+                if (library.hiddenRecommendations.isNotEmpty()) {
+                    TextButton(
+                        onClick = library::resetHiddenRecommendations,
+                        contentPadding = PaddingValues(horizontal = 0.dp)
+                    ) { Text("Вернуть скрытые", fontSize = 11.sp) }
+                }
             }
         } else {
             item {
@@ -283,108 +289,10 @@ fun RecommendationsScreen(
             }
         }
     }
-}
-
-@Composable
-private fun RecommendationItem(
-    recommendation: AnimeRecommendation,
-    favorite: Boolean,
-    onOpen: () -> Unit,
-    onFavorite: () -> Unit,
-    onHide: () -> Unit
-) {
-    val anime = recommendation.anime
-    Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(17.dp))
-            .background(Panel)
-            .clickable(onClick = onOpen)
-            .padding(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Cover(
-            anime.cover,
-            Modifier.size(width = 82.dp, height = 115.dp)
-                .clip(RoundedCornerShape(11.dp)),
-            anime.title
+        SnackbarHost(
+            hostState = snackbarHost,
+            modifier = Modifier.align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, bottom = 86.dp)
         )
-        Column(
-            modifier = Modifier.weight(1f).heightIn(min = 113.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Text(
-                anime.title, maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = Paper, fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp, lineHeight = 17.sp
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (anime.year > 0) {
-                    Text(anime.year.toString(), color = Muted, fontSize = 10.sp)
-                }
-                if (anime.score > 0) {
-                    Icon(Icons.Rounded.Star, null,
-                        modifier = Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.primary)
-                    Text(
-                        (anime.score / 10.0).toString(),
-                        color = Muted, fontSize = 10.sp
-                    )
-                }
-            }
-            Text(
-                recommendation.reason, maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 11.sp, lineHeight = 15.sp
-            )
-            if (recommendation.matchedGenres.isNotEmpty()) {
-                Text(
-                    recommendation.matchedGenres.take(2).joinToString(" · "),
-                    color = Muted, fontSize = 10.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = onFavorite,
-                    modifier = Modifier.size(30.dp)
-                ) {
-                    Icon(
-                        if (favorite) Icons.Rounded.Favorite
-                        else Icons.Rounded.FavoriteBorder,
-                        if (favorite) "Убрать из избранного" else "В избранное",
-                        tint = if (favorite) MaterialTheme.colorScheme.primary else Muted,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                IconButton(
-                    onClick = onHide,
-                    modifier = Modifier.size(30.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.VisibilityOff,
-                        "Не рекомендовать это аниме",
-                        tint = Muted, modifier = Modifier.size(18.dp)
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "Открыть", color = Paper, fontSize = 10.sp
-                )
-                Icon(
-                    Icons.Rounded.ChevronRight, null,
-                    tint = Muted, modifier = Modifier.size(16.dp)
-                )
-            }
-        }
     }
 }
