@@ -3,6 +3,7 @@ package ru.lisurgut.oalab
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalContext
@@ -200,6 +201,11 @@ fun BottomPill(
         Triple("Настройки", Icons.Rounded.Settings, 4)
     )
     val compact = LocalConfiguration.current.screenWidthDp < 390
+    val dockScroll = rememberScrollState()
+    LaunchedEffect(selected, updateAvailable, dockScroll.maxValue) {
+        // Auto-reveal the selected capsule on unusually narrow displays.
+        dockScroll.animateScrollTo(if (selected >= 3) dockScroll.maxValue else 0)
+    }
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding()
             .padding(horizontal = 9.dp, vertical = 8.dp),
@@ -210,7 +216,7 @@ fun BottomPill(
                 .clip(CircleShape)
                 .border(1.dp, Edge.copy(alpha = .65f), CircleShape)
                 .background(PanelAlt)
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(dockScroll)
                 .padding(4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
