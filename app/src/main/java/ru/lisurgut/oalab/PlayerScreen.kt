@@ -4,6 +4,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.Canvas
 import android.app.Activity
 import android.app.PictureInPictureParams
@@ -56,7 +62,7 @@ private fun mediaItem(variant: StreamVariant): MediaItem {
     return builder.build()
 }
 
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun PlayerScreen(
     request: PlaybackRequest,
@@ -96,10 +102,8 @@ fun PlayerScreen(
     var length by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
     var controlsLocked by remember { mutableStateOf(false) }
-    var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
-    var scrubbing by remember { mutableStateOf(false) }
     var pendingSeek by remember { mutableStateOf<Long?>(null) }
-    var previewEpisode by remember { mutableIntStateOf(0) }
+    var modeOptions by remember { mutableStateOf(false) }
     var lastGestureSeek by remember { mutableLongStateOf(0L) }
     var gestureHint by remember { mutableStateOf("") }
     var gestureCount by remember { mutableIntStateOf(0) }
@@ -120,16 +124,19 @@ fun PlayerScreen(
     val episode = active.episode
     val recordedDurations = remember { mutableStateMapOf<Int, Long>() }
     val durations = queue.map { item ->
-        (item.details?.durationMs ?: 0L).takeIf { it > 0L }
-            ?: recordedDurations[item.episode] ?: 0L
+        // Media3's measured time overrides imperfect metadata after an item loads.
+        recordedDurations[item.episode]?.takeIf { it > 0L }
+            ?: (item.details?.durationMs ?: 0L).takeIf { it > 0L } ?: 0L
     }
     val completeDuration = EpisodeTimeline.totalDuration(durations) ?: 0L
     val episodeOffset = durations.take(currentIndex).sum()
     val totalPosition = if (merged)
         EpisodeTimeline.globalPosition(durations, currentIndex, time) ?: episodeOffset + time
     else time
-    val displayDuration = if (merged) completeDuration else length
-    val displayedPosition = if (merged) totalPosition else time
+    val displayDuration = if (merged && completeDuration > 0L)
+        completeDuration else length
+    val displayedPosition = if (merged && completeDuration > 0L)
+        totalPosition else time
 
     val latestQueue by rememberUpdatedState(queue)
 
@@ -271,6 +278,7 @@ fun PlayerScreen(
 
     LaunchedEffect(request.anime.id, episode) {
         suppressedNext = false
+        pendingSeek = null
     }
 
     LaunchedEffect(player, episode) {
@@ -328,25 +336,9 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(pendingSeek, queue.map { it.url }) {
-        val target = pendingSeek
-        if (target == null) {
-            thumbnail = null
-            return@LaunchedEffect
-        }
-        delay(70)
-        val location = if (merged)
-            EpisodeTimeline.locate(durations, target)
-        else EpisodeSeek(currentIndex, target)
-        val stream = location?.let { queue.getOrNull(it.index) }
-        previewEpisode = stream?.episode ?: episode
-        thumbnail = if (stream != null && location != null)
-            EpisodeFrames.cachedFrame(context, stream, location.positionMs)
-        else null
-    }
-
-    LaunchedEffect(controls, request.stream.url, controlsLocked) {
-        if (controls && !controlsLocked && error == null) {
+    LaunchedEffect(controls, request.stream.url, controlsLocked, modeOptions, pendingSeek) {
+        if (controls && !controlsLocked && !modeOptions &&
+            pendingSeek == null && error == null) {
             delay(4_000)
             controls = false
         }
@@ -364,6 +356,15 @@ fun PlayerScreen(
         }
         controls = true
     }
+
+    val previewPoint = pendingSeek?.let { target ->
+        if (merged && completeDuration > 0L) EpisodeTimeline.locate(durations, target)
+        else EpisodeSeek(currentIndex, target.coerceIn(0L, length.coerceAtLeast(0L)))
+    }
+    val previewStream = previewPoint?.let { queue.getOrNull(it.index) }
+    val previewChapterStart = if (merged && completeDuration > 0L && previewPoint != null)
+        EpisodeTimeline.chapterStarts(durations).getOrElse(previewPoint.index) { 0L }
+    else 0L
 
     val nextStream = if (merged) null else streams.filter {
         it.episode > episode
@@ -451,7 +452,7 @@ fun PlayerScreen(
             )
         }
 
-        if (speedBoost && !pipMode) {
+        if (speedBoost && !pipMode && !modeOptions) {
             Text(
                 "2×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
                 modifier = Modifier.align(Alignment.TopCenter)
@@ -497,17 +498,29 @@ fun PlayerScreen(
                     else "Авто · " + active.popularity + "p",
                     color = Color.White.copy(alpha = .7f), fontSize = 9.sp
                 )
-                IconButton(
-                    onClick = { library.updateMergeEpisodes(!merged) },
-                    modifier = Modifier.size(31.dp)
+                Box(
+                    Modifier.size(34.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .combinedClickable(
+                            onClick = {
+                                modeOptions = false
+                                library.updateMergeEpisodes(!merged)
+                            },
+                            onLongClick = {
+                                controls = true
+                                modeOptions = !modeOptions
+                            },
+                            onLongClickLabel = "Выбрать обычный или непрерывный просмотр"
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         if (merged) Icons.Rounded.QueuePlayNext else Icons.Rounded.PlaylistPlay,
-                        if (merged) "Отключить объединение серий"
-                        else "Объединить серии",
+                        if (merged) "Непрерывный просмотр · зажми для выбора"
+                        else "Обычный просмотр · зажми для выбора",
                         tint = if (merged) MaterialTheme.colorScheme.primary
                             else Color.White,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(19.dp)
                     )
                 }
                 IconButton(
@@ -544,7 +557,7 @@ fun PlayerScreen(
                 }
             }
 
-            if (!controlsLocked) Row(
+            if (!controlsLocked && pendingSeek == null && !modeOptions) Row(
                 Modifier.align(Alignment.Center)
                     .clip(RoundedCornerShape(14.dp))
                     .border(1.dp, Color.White.copy(alpha = .2f), RoundedCornerShape(14.dp))
@@ -560,9 +573,16 @@ fun PlayerScreen(
                 Box(
                     Modifier.width(154.dp).height(42.dp)
                         .background(MaterialTheme.colorScheme.primary)
-                        .clickable {
-                            if (player.isPlaying) player.pause() else player.play()
-                        },
+                        .combinedClickable(
+                            onClick = {
+                                if (player.isPlaying) player.pause() else player.play()
+                            },
+                            onLongClick = {
+                                controls = true
+                                modeOptions = !modeOptions
+                            },
+                            onLongClickLabel = "Выбрать режим просмотра"
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -587,99 +607,76 @@ fun PlayerScreen(
                         fontSize = 12.sp)
                 }
             }
-            if (!controlsLocked) Column(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 5.dp)
-            ) {
-                if (merged && completeDuration > 0L) {
-                    BoxWithConstraints(Modifier.fillMaxWidth().height(17.dp)) {
-                        Canvas(Modifier.fillMaxSize()) {
-                            for (fraction in EpisodeTimeline.boundaryFractions(durations)) {
-                                val x = size.width * fraction
-                                drawLine(
-                                    color = Color.White.copy(alpha = .72f),
-                                    start = androidx.compose.ui.geometry.Offset(x, 0f),
-                                    end = androidx.compose.ui.geometry.Offset(x, size.height),
-                                    strokeWidth = 2.dp.toPx()
-                                )
-                            }
-                        }
-                        EpisodeTimeline.boundaryFractions(durations)
-                            .forEachIndexed { chapter, fraction ->
-                                val x = (maxWidth * fraction - 10.dp)
-                                    .coerceIn(0.dp, (maxWidth - 20.dp).coerceAtLeast(0.dp))
-                                Box(
-                                    Modifier.offset(x = x)
-                                        .size(width = 20.dp, height = 17.dp)
-                                        .clickable {
-                                            seek(durations.take(chapter + 1).sum())
-                                        }
-                                )
-                            }
-                    }
-                }
-                if (pendingSeek != null) {
-                    Row(
-                        Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (thumbnail != null) {
-                            Image(
-                                bitmap = thumbnail!!.asImageBitmap(),
-                                contentDescription = "Кадр на шкале",
-                                modifier = Modifier.width(95.dp).height(54.dp)
-                                    .clip(RoundedCornerShape(9.dp)),
-                                contentScale = ContentScale.Fit
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Column {
-                            Text(episodeDuration(pendingSeek ?: 0L),
-                                fontSize = 11.sp, color = Color.White,
-                                fontWeight = FontWeight.Bold)
-                            Text("Серия " + previewEpisode, fontSize = 10.sp,
-                                color = Color.White.copy(alpha = .7f))
-                        }
-                    }
-                }
-                Slider(
-                    value = if (displayDuration > 0L)
-                        ((pendingSeek ?: displayedPosition).toFloat() / displayDuration)
-                            .coerceIn(0f, 1f)
-                    else 0f,
-                    onValueChange = { fraction ->
-                        if (displayDuration > 0L) {
-                            pendingSeek = (fraction * displayDuration).roundToLong()
-                            scrubbing = true
-                        }
+            if (!controlsLocked) {
+                CombinedTimelineBar(
+                    merged = merged,
+                    queue = queue,
+                    durations = durations,
+                    activeIndex = currentIndex,
+                    positionMs = time,
+                    durationMs = length,
+                    pendingSeek = pendingSeek,
+                    onPreview = { target ->
+                        pendingSeek = target
+                        controls = true
                     },
-                    onValueChangeFinished = {
+                    onCommit = {
                         pendingSeek?.let { seek(it) }
                         pendingSeek = null
-                        scrubbing = false
                     },
-                    enabled = displayDuration > 0L,
-                    modifier = Modifier.fillMaxWidth().height(22.dp),
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = Color.White.copy(alpha = .35f)
-                    )
+                    onSeek = { chapterStart ->
+                        pendingSeek = null
+                        seek(chapterStart)
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 6.dp)
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(episodeDuration(displayedPosition), color = Color.White,
-                        fontSize = 10.sp)
-                    Text(
-                        if (displayDuration > 0L) episodeDuration(displayDuration)
-                        else "Длительность неизвестна",
-                        color = Color.White.copy(alpha = .82f), fontSize = 10.sp
-                    )
-                }
+            }
+
+        }
+
+        AnimatedVisibility(
+            visible = modeOptions && !pipMode && !controlsLocked,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 49.dp)
+        ) {
+            PlaybackModeStrip(
+                continuous = merged,
+                onChoose = { selected ->
+                    modeOptions = false
+                    pendingSeek = null
+                    library.updateMergeEpisodes(selected)
+                },
+                modifier = Modifier.width(314.dp),
+                darkOverlay = true
+            )
+        }
+
+        AnimatedVisibility(
+            visible = pendingSeek != null && previewStream != null &&
+                !pipMode && !controlsLocked,
+            enter = fadeIn() + scaleIn(initialScale = .94f),
+            exit = fadeOut() + scaleOut(targetScale = .96f),
+            modifier = Modifier.align(Alignment.BottomCenter)
+                .padding(bottom = if (merged && completeDuration > 0L) 100.dp else 71.dp)
+        ) {
+            if (previewPoint != null && previewStream != null) {
+                CombinedSeekPreview(
+                    stream = previewStream,
+                    localTimeMs = previewPoint.positionMs,
+                    globalTimeMs = pendingSeek ?: 0L,
+                    chapterStartMs = previewChapterStart,
+                    showGlobal = merged && completeDuration > 0L,
+                    modifier = Modifier.width(335.dp)
+                )
             }
         }
 
         AnimatedVisibility(
-            visible = skip != null && error == null && !pipMode && !controlsLocked,
+            visible = skip != null && error == null && !pipMode &&
+                !controlsLocked && pendingSeek == null && !modeOptions,
             enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomEnd)
                 .padding(end = 20.dp, bottom = 76.dp)
@@ -705,7 +702,8 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = revealNext && error == null && !pipMode && !controlsLocked,
+            visible = revealNext && error == null && !pipMode &&
+                !controlsLocked && pendingSeek == null && !modeOptions,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 3 }),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopEnd)
