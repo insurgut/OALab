@@ -193,8 +193,19 @@ object EpisodeFrames {
         if (duration <= 0L) return@withContext null
         val index = ((timeMs.toDouble() / duration) * 10)
             .toInt().coerceIn(0, 9)
-        val image = file(context, stream.url, index)
-        if (image.isFile) BitmapFactory.decodeFile(image.absolutePath) else null
+        // Choose a neighboring real frame from the SAME AniLibria episode when
+        // the exact screenshot has not yet been decoded. Never show another episode.
+        val candidates = (0 until 10).sortedBy { kotlin.math.abs(it - index) }
+        var result: Bitmap? = null
+        for (candidate in candidates) {
+            val image = file(context, stream.url, candidate)
+            if (!image.isFile) continue
+            result = try {
+                BitmapFactory.decodeFile(image.absolutePath)
+            } catch (_: Exception) { null }
+            if (result != null) break
+        }
+        result
     }
 
     suspend fun load(
