@@ -1,0 +1,4 @@
+# Signing credentials never belong in source control
+*.jks
+*.keystore
+*.p12

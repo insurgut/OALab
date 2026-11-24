@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
+import android.os.SystemClock
 
 data class ChangeLine(val kind: Char, val message: String)
 data class UpdateInfo(
@@ -54,6 +55,10 @@ object OAlabUpdates {
     private const val ANONYMOUS_UPDATES = "https://insurgut.github.io/OALab/update.json"
     private const val ANONYMOUS_BASE = "https://insurgut.github.io/OALab/"
     val changes = listOf('+', '-', '*')
+    private const val NETWORK_INTERVAL_MS = 5 * 60_000L
+    private const val ERROR_BACKOFF_MS = 2 * 60_000L
+    @Volatile private var lastNetworkAttemptMs = 0L
+    @Volatile private var cachedScan: UpdateScan? = null
 
     fun parseChangelog(raw: String): List<ChangeLine> = raw.lines()
         .map { it.trim() }
@@ -101,8 +106,19 @@ object OAlabUpdates {
         } finally { connection.disconnect() }
     }
 
-    suspend fun check(context: Context): UpdateScan = withContext(Dispatchers.IO) {
-        try {
+    suspend fun check(
+        context: Context,
+        force: Boolean = false
+    ): UpdateScan = withContext(Dispatchers.IO) {
+        val now = SystemClock.elapsedRealtime()
+        val previous = cachedScan
+        val interval = if (previous?.error == null) NETWORK_INTERVAL_MS else ERROR_BACKOFF_MS
+        if (!force && previous != null &&
+            now >= lastNetworkAttemptMs && now - lastNetworkAttemptMs < interval) {
+            return@withContext previous
+        }
+        lastNetworkAttemptMs = now
+        val result = try {
             val installed = context.packageManager.getPackageInfo(context.packageName, 0)
                 .versionName ?: "0.0.0"
             // GitHub Pages serves only the APK and changelog, keeping source code private.
@@ -114,7 +130,7 @@ object OAlabUpdates {
                 val notesUrl = manifest.optString("notes")
                 if (apk.startsWith(ANONYMOUS_BASE) && notesUrl.startsWith(ANONYMOUS_BASE)) {
                     if (newer(version, installed)) {
-                        return@withContext UpdateScan(
+                        val found = UpdateScan(
                             update = UpdateInfo(
                                 version = version,
                                 apkUrl = apk,
@@ -122,8 +138,12 @@ object OAlabUpdates {
                             ),
                             checked = true
                         )
+                        cachedScan = found
+                        return@withContext found
                     }
-                    return@withContext UpdateScan(checked = true)
+                    val upToDate = UpdateScan(checked = true)
+                    cachedScan = upToDate
+                    return@withContext upToDate
                 }
             } catch (_: Exception) {
                 // Fallback for public GitHub repositories if Pages is not configured.
@@ -148,15 +168,24 @@ object OAlabUpdates {
                 if (apk == null) continue
                 val changelog = if (notes == null) item.optString("body") else
                     try { getText(notes) } catch (_: Exception) { item.optString("body") }
-                return@withContext UpdateScan(
+                val found = UpdateScan(
                     update = UpdateInfo(tag.removePrefix("v"), apk, parseChangelog(changelog)),
                     checked = true
                 )
+                cachedScan = found
+                return@withContext found
             }
             UpdateScan(checked = true)
         } catch (e: Exception) {
-            UpdateScan(error = e.localizedMessage ?: "Ошибка проверки обновлений", checked = true)
+            val failed = UpdateScan(
+                update = cachedScan?.update,
+                error = e.localizedMessage ?: "Ошибка проверки обновлений",
+                checked = true
+            )
+            failed
         }
+        cachedScan = result
+        result
     }
 
     fun download(context: Context, update: UpdateInfo): Long {

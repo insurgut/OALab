@@ -33,14 +33,40 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Run timeline unit tests and build debug APK
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Configure persistent release signing when secrets are present
+        env:
+          KEYSTORE_B64: ${{ secrets.OALAB_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.OALAB_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.OALAB_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.OALAB_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE_B64" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/oalab-release.jks"
+            echo "OALAB_KEYSTORE_PATH=$RUNNER_TEMP/oalab-release.jks" >> "$GITHUB_ENV"
+            echo "OALAB_KEYSTORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "OALAB_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "OALAB_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "OALAB_SIGNED_RELEASE=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No persistent signing key configured. Debug APKs will NOT upgrade reliably across CI runs."
+            echo "OALAB_SIGNED_RELEASE=false" >> "$GITHUB_ENV"
+          fi
+      - name: Run tests and build APK
+        run: |
+          gradle --no-daemon :app:testDebugUnitTest --stacktrace
+          if [[ "$OALAB_SIGNED_RELEASE" == "true" ]]; then
+            gradle --no-daemon :app:assembleRelease --stacktrace
+            echo "APK_PATH=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
+          else
+            gradle --no-daemon :app:assembleDebug --stacktrace
+            echo "APK_PATH=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
+          fi
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: OALab-debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/*/*.apk
           if-no-files-found: warn
           retention-days: 30
 
@@ -56,7 +82,10 @@ jobs:
             echo "::error::Version $TAG already published. Bump versionName to create a new release."
             exit 1
           fi
-          cp app/build/outputs/apk/debug/app-debug.apk "OAlab-v$VERSION.apk"
+          cp "$APK_PATH" "OAlab-v$VERSION.apk"
+          if [[ "$OALAB_SIGNED_RELEASE" != "true" ]]; then
+            printf '\n* Signing key is not yet configured: this APK uses temporary Android debug signing.\n' >> lupd.txt
+          fi
           gh release create "$TAG" "OAlab-v$VERSION.apk" "lupd.txt#lupd.txt" --title "OAlab $VERSION" --notes-file "lupd.txt" --prerelease
 
       - name: Prepare public APK-only update channel

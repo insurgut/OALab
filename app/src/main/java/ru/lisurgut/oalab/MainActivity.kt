@@ -16,6 +16,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 
 data class PlaybackRequest(val anime: Anime, val episode: Int, val stream: StreamVariant)
 
@@ -75,11 +79,18 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
     var updateScan by remember { mutableStateOf(UpdateScan()) }
     var updateRefresh by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(updateRefresh) {
-        while (true) {
-            updateScan = OAlabUpdates.check(context)
-            delay(6 * 60 * 60 * 1000L)
+    // The UI polls every 5 seconds while in the foreground.
+    // Network requests are cached/backed off to respect GitHub API limits.
+    LaunchedEffect(updateRefresh, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var first = true
+            while (isActive) {
+                updateScan = OAlabUpdates.check(context, force = first && updateRefresh > 0)
+                first = false
+                delay(5_000)
+            }
         }
     }
     var refreshKey by remember { mutableIntStateOf(0) }
@@ -172,11 +183,12 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
             Scaffold(
                 containerColor = Ink,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = { BottomPill(tab) { tab = it } },
-                floatingActionButton = {
-                    if (updateScan.update != null) UpdateBubble {
-                        updatesOpen = true
-                    }
+                bottomBar = {
+                    BottomPill(
+                        selected = tab, onSelect = { tab = it },
+                        updateAvailable = updateScan.update != null,
+                        onOpenUpdate = { updatesOpen = true }
+                    )
                 }
             ) { innerPadding ->
                 when (tab) {

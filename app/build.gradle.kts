@@ -4,6 +4,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Never commit the private keystore. Configure GitHub Actions secrets for signing.
+val signingStore = System.getenv("OALAB_KEYSTORE_PATH")
+val signingPassword = System.getenv("OALAB_KEYSTORE_PASSWORD")
+val signingAlias = System.getenv("OALAB_KEY_ALIAS")
+val signingKeyPassword = System.getenv("OALAB_KEY_PASSWORD")
+val stableSigningEnabled = listOf(
+    signingStore, signingPassword, signingAlias, signingKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "ru.lisurgut.oalab"
     compileSdk = 36
@@ -15,9 +24,20 @@ android {
         versionCode = 12
         versionName = "0.5.3"
     }
+    if (stableSigningEnabled) {
+        signingConfigs {
+            create("stableRelease") {
+                storeFile = file(signingStore!!)
+                storePassword = signingPassword
+                keyAlias = signingAlias
+                keyPassword = signingKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (stableSigningEnabled) signingConfig = signingConfigs.getByName("stableRelease")
         }
     }
     compileOptions {
@@ -45,6 +65,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.media3:media3-session:1.11.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.media3:media3-exoplayer:1.11.1")

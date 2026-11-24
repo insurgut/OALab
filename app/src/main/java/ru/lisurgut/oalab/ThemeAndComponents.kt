@@ -183,7 +183,12 @@ fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: Str
 }
 
 @Composable
-fun BottomPill(selected: Int, onSelect: (Int) -> Unit) {
+fun BottomPill(
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    updateAvailable: Boolean = false,
+    onOpenUpdate: () -> Unit = {}
+) {
     val tabs = listOf(
         Triple("Главная", Icons.Rounded.Home, 0),
         Triple("Каталог", Icons.Rounded.Search, 1),
@@ -223,6 +228,22 @@ fun BottomPill(selected: Int, onSelect: (Int) -> Unit) {
                             fontSize = 11.sp, maxLines = 1,
                             fontWeight = FontWeight.SemiBold)
                     }
+                }
+            }
+            AnimatedVisibility(updateAvailable) {
+                Row(
+                    Modifier.clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .clickable(onClick = onOpenUpdate)
+                        .height(44.dp).padding(horizontal = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.SystemUpdate, "Новое обновление",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Обновить", color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
