@@ -132,88 +132,170 @@ fun PlumHomeScreen(
 ) {
     val progress = library.inProgress()
     val featured = progress.firstOrNull()?.anime ?: catalog.firstOrNull()
-    val genres = library.preferredGenres().take(5)
-    val sorted = if (genres.isEmpty()) catalog else catalog.sortedWith(
-        compareByDescending<Anime> { a -> a.genres.count { it in genres } }
-            .thenByDescending { it.score })
-    val visible = (progress.map { it.anime } + sorted).distinctBy { it.id }.take(35)
-    LazyColumn(Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
-        contentPadding = PaddingValues(start=16.dp,end=16.dp,bottom=105.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(top=9.dp,bottom=11.dp),
-                verticalAlignment=Alignment.CenterVertically) {
-                Text("OAlab",Modifier.weight(1f),color=MaterialTheme.colorScheme.onBackground,fontSize=27.sp,
-                    fontWeight=FontWeight.Medium, letterSpacing=(-1.2).sp)
-                IconButton(onClick=onCatalogue) {Icon(Icons.Rounded.Search,"Поиск")}
-            }
-        }
-        if(featured!=null) item {
-            Box(Modifier.fillMaxWidth().height(153.dp).clip(RoundedCornerShape(25.dp))
-                .background(Panel).clickable {onOpen(featured)}) {
-                Cover(featured.banner.ifBlank{featured.cover},
-                    Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.6f))
-                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(
-                    listOf(Ink, Ink.copy(alpha=.96f),Ink.copy(alpha=.4f),Color.Transparent))))
-                Column(Modifier.fillMaxHeight().fillMaxWidth(.76f).padding(17.dp),
-                    verticalArrangement=Arrangement.SpaceBetween) {
-                    Text(if(progress.isNotEmpty())"Продолжить просмотр" else "В тренде",
-                        color=Color.White.copy(alpha=.84f),fontSize=11.sp)
-                    Column {
-                        Text(featured.title,color=Color.White,maxLines=2,overflow=TextOverflow.Ellipsis,
-                            fontSize=19.sp,lineHeight=23.sp,fontWeight=FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement=Arrangement.spacedBy(9.dp),
-                            verticalAlignment=Alignment.CenterVertically) {
-                            AnimeYearMark(featured.year)
-                            Text(featured.format.ifBlank{"Аниме"},color=Color.White.copy(alpha=.84f),fontSize=11.sp)
-                        }
-                    }
-                    Button(onClick={onPlay(featured)},shape=CircleShape,
-                        contentPadding=PaddingValues(horizontal=12.dp),
-                        modifier=Modifier.height(35.dp),
-                        colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary)) {
-                        Icon(Icons.Rounded.PlayArrow,null,modifier=Modifier.size(18.dp))
-                        Text("Смотреть",fontSize=12.sp)
-                    }
+    val preferred = library.preferredGenres().take(5)
+    val ranked = if (preferred.isEmpty()) catalog else catalog.sortedWith(
+        compareByDescending<Anime> { anime ->
+            anime.genres.count { it in preferred }
+        }.thenByDescending { it.score }
+    )
+    val visible = (progress.map { it.anime } + ranked)
+        .filter { it.id != featured?.id }
+        .distinctBy { it.id }.take(9)
+    val watching = progress.size
+    val finished = library.watched().size
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        contentPadding = PaddingValues(
+            start = 16.dp, end = 16.dp, top = 12.dp, bottom = 114.dp
+        )
+    ) {
+        item(key = "home-header") {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "OAlab", color = Paper, fontSize = 27.sp,
+                        letterSpacing = (-1.1).sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        if (watching + finished > 0)
+                            watching.toString() + " смотрю · " +
+                                finished.toString() + " просмотрено"
+                        else "Твоя коллекция аниме",
+                        color = Muted, fontSize = 11.sp
+                    )
+                }
+                IconButton(
+                    onClick = onCatalogue,
+                    modifier = Modifier.size(41.dp)
+                        .clip(CircleShape).background(Panel)
+                ) {
+                    Icon(
+                        Icons.Rounded.Search, "Поиск аниме",
+                        tint = Paper, modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }
-        item {
-            Row(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=13.dp),
-                horizontalArrangement=Arrangement.SpaceBetween) {
-                PlumMetric("Избранное",library.entries.count{it.favorite && it.anime.id.startsWith("aniliberty:")}.toString())
-                PlumMetric("Смотрю",progress.size.toString())
-                PlumMetric("Просмотрено",library.watched().size.toString())
+        if (featured != null) {
+            item(key = "home-featured") {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Panel)
+                        .clickable { onOpen(featured) }
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Cover(
+                        featured.cover,
+                        Modifier.width(75.dp).height(101.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                        featured.title
+                    )
+                    Column(
+                        Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            if (progress.isNotEmpty()) "ПРОДОЛЖИТЬ"
+                            else "ПОПУЛЯРНОЕ",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = .7.sp
+                        )
+                        Text(
+                            featured.title, color = Paper, fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 19.sp, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (progress.isNotEmpty()) {
+                                Text(
+                                    "Серия " +
+                                        (library.entry(featured)?.lastEpisode ?: 1),
+                                    color = Muted, fontSize = 11.sp
+                                )
+                            } else AnimeYearMark(featured.year)
+                            TextButton(
+                                onClick = { onPlay(featured) },
+                                contentPadding = PaddingValues(0.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.PlayArrow, null,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Text("Смотреть", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    Icon(
+                        Icons.Rounded.ChevronRight, "Подробнее",
+                        tint = Muted, modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(Modifier.height(22.dp))
             }
         }
         item(key = "weekly-upcoming-releases") {
-            Spacer(Modifier.height(9.dp))
             UpcomingScheduleSection(library = library, onOpen = onOpen)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(17.dp))
         }
-        if(error!=null)item{ErrorPanel(error,onRetry)}
-        if(loading && catalog.isEmpty())item{LinearProgressIndicator(Modifier.fillMaxWidth())}
-        item {
-            Row(Modifier.fillMaxWidth().padding(vertical=5.dp),
-                verticalAlignment=Alignment.CenterVertically) {
-                Text("Для тебя",color=MaterialTheme.colorScheme.onBackground,
-                    fontSize=22.sp,fontWeight=FontWeight.Medium,
-                    modifier=Modifier.weight(1f))
-                TextButton(onClick=onCatalogue){Text("Каталог",fontSize=12.sp)}
+        if (error != null) item(key = "home-error") {
+            ErrorPanel(error, onRetry)
+            Spacer(Modifier.height(9.dp))
+        }
+        if (loading && catalog.isEmpty()) item(key = "home-loading") {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        item(key = "home-recommend-title") {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (preferred.isEmpty()) "Что посмотреть" else "По твоим интересам",
+                    color = Paper, fontSize = 19.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onCatalogue) {
+                    Text("Каталог", fontSize = 11.sp)
+                    Icon(
+                        Icons.Rounded.ChevronRight, null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
-        itemsIndexed(visible,key={_,a->a.id}){i,a->
-            PlumAnimeLine(a,library,{onOpen(a)},{onPlay(a)},rank=i+1)
+        items(visible, key = { it.id }) { anime ->
+            PlumAnimeLine(
+                anime, library,
+                onOpen = { onOpen(anime) },
+                onPlay = { onPlay(anime) }
+            )
         }
-        if(visible.isEmpty()&&!loading&&error==null)item{
-            EmptyState(Icons.Rounded.Movie,"Каталог пуст","Повтори загрузку")
+        if (visible.isEmpty() && featured == null && !loading && error == null) {
+            item(key = "home-empty") {
+                EmptyState(
+                    Icons.Rounded.Movie,
+                    "Здесь появится аниме",
+                    "Открой каталог, чтобы найти что-нибудь интересное"
+                )
+            }
         }
     }
-}
-
-@Composable
-private fun PlumMetric(label:String,value:String) {
-    Column {Text(value,fontSize=23.sp);Text(label,fontSize=10.sp,color=Muted)}
 }
 
 @Composable
