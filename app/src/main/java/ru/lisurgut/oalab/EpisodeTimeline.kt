@@ -44,6 +44,21 @@ object EpisodeTimeline {
         }
     }
 
+    /** Exact virtual offsets for the beginning of every episode. */
+    fun chapterStarts(durations: List<Long>): List<Long> {
+        if (totalDuration(durations) == null) return emptyList()
+        var offset = 0L
+        return durations.map { duration ->
+            val beginning = offset
+            offset += duration
+            beginning
+        }
+    }
+
+    /** Resolve the chapter that owns the preview point without rounding to a neighbor. */
+    fun chapterAt(durations: List<Long>, globalPosition: Long): EpisodeSeek? =
+        locate(durations, globalPosition)
+
     fun frameTimes(durationMs: Long): List<Long> {
         if (durationMs <= 0L) return emptyList()
         return (0 until 10).map { index ->

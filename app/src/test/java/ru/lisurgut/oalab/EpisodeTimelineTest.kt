@@ -41,6 +41,34 @@ class EpisodeTimelineTest {
     }
 
     @Test
+    fun chapterStartsIncludeFirstAndEveryBoundary() {
+        assertEquals(
+            listOf(0L, 60_000L, 180_000L),
+            EpisodeTimeline.chapterStarts(samples)
+        )
+        assertEquals(
+            listOf(0L), EpisodeTimeline.chapterStarts(listOf(1000L))
+        )
+        assertTrue(EpisodeTimeline.chapterStarts(listOf(10L, 0L)).isEmpty())
+    }
+
+    @Test
+    fun chapterPreviewNeverSkipsOrCreatesAGapAtTheBoundary() {
+        val atFirst = EpisodeTimeline.chapterAt(samples, 0L)
+        val before = EpisodeTimeline.chapterAt(samples, 59_999L)
+        val boundary = EpisodeTimeline.chapterAt(samples, 60_000L)
+        val end = EpisodeTimeline.chapterAt(samples, 210_000L)
+        assertEquals(EpisodeSeek(0,0L),atFirst)
+        assertEquals(EpisodeSeek(0,59_999L),before)
+        assertEquals(EpisodeSeek(1,0L),boundary)
+        assertEquals(EpisodeSeek(2,30_000L),end)
+        for (time in 0L..210_000L step 873L) {
+            val pos = EpisodeTimeline.locate(samples,time)!!
+            assertEquals(time,EpisodeTimeline.globalPosition(samples,pos.index,pos.positionMs))
+        }
+    }
+
+    @Test
     fun screenshotSamplingIsTenDistinctEvenlySpacedTimes() {
         val times = EpisodeTimeline.frameTimes(100_000L)
         assertEquals(10, times.size)
