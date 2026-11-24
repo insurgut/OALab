@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -193,8 +194,11 @@ fun BottomPill(
         Triple("Главная", Icons.Rounded.Home, 0),
         Triple("Каталог", Icons.Rounded.Search, 1),
         Triple("Моё", Icons.Rounded.Bookmarks, 2),
-        Triple("Настройки", Icons.Rounded.Settings, 3)
+        Triple("Для тебя", Icons.Rounded.AutoAwesome, 3),
+        Triple("Настройки", Icons.Rounded.Settings, 4)
     )
+    // Keep five tabs usable on small phones and with an update action visible.
+    val compact = LocalConfiguration.current.screenWidthDp < 450 || updateAvailable
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 9.dp),
@@ -222,7 +226,7 @@ fun BottomPill(
                     Icon(icon, if (active) null else name,
                         tint = if (active) MaterialTheme.colorScheme.onPrimary else Muted,
                         modifier = Modifier.size(20.dp))
-                    AnimatedVisibility(active) {
+                    AnimatedVisibility(active && !compact) {
                         Text(name, color = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.padding(start = 6.dp),
                             fontSize = 11.sp, maxLines = 1,
@@ -241,9 +245,11 @@ fun BottomPill(
                     Icon(Icons.Rounded.SystemUpdate, "Новое обновление",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(19.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Обновить", color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    if (!compact) {
+                        Spacer(Modifier.width(5.dp))
+                        Text("Обновить", color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }

@@ -257,6 +257,7 @@ private fun OALabApp(
                         onRetry = { refreshKey++ }
                     )
                     2 -> PlumLibraryScreen(library, openAnime, playOrOpen)
+                    3 -> RecommendationsScreen(library = library, onOpen = openAnime)
                     else -> SettingsScreen(
                         library = library, onReload = { refreshKey++ },
                         onUpdates = { updatesOpen = true }
