@@ -206,6 +206,10 @@ fun DetailScreen(
                         stream = preview,
                         selected = number == episode,
                         active = isVisible,
+                        progress = library.progressPercent(
+                            anime, number, detailsForEpisode?.durationMs ?: 0L
+                        ),
+                        positionMs = library.episodePosition(anime, number),
                         onPlay = {
                             episode = number
                             onWatch(number, null)
@@ -279,6 +283,8 @@ private fun EpisodeCard(
     stream: StreamVariant,
     selected: Boolean,
     active: Boolean,
+    progress: Int,
+    positionMs: Long,
     onPlay: () -> Unit
 ) {
     val accent = MaterialTheme.colorScheme.primary
@@ -315,8 +321,24 @@ private fun EpisodeCard(
                     color = Muted, fontSize = 10.sp)
             }
             Spacer(Modifier.height(5.dp))
-            Icon(Icons.Rounded.PlayCircle, "Смотреть серию",
-                tint = accent, modifier = Modifier.size(21.dp))
+            if (progress > 0) {
+                Text(
+                    if (progress >= 95) "Просмотрено"
+                    else "Продолжить: " + episodeDuration(positionMs),
+                    color = if (progress >= 95) accent else Muted,
+                    fontSize = 10.sp, maxLines = 1
+                )
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth().height(3.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = accent,
+                    trackColor = Edge
+                )
+            } else {
+                Icon(Icons.Rounded.PlayCircle, "Смотреть серию",
+                    tint = accent, modifier = Modifier.size(21.dp))
+            }
         }
     }
 }

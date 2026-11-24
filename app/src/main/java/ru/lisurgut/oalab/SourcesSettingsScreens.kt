@@ -84,6 +84,23 @@ fun SettingsScreen(
                 }
             }
         }
+        Spacer(Modifier.height(8.dp))
+        Column(
+            Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp))
+                .padding(horizontal = 13.dp)
+        ) {
+            SettingToggle(
+                "Экономить интернет",
+                "Начинать с 480p и повышать качество только по выбору",
+                library.dataSaver, library::updateDataSaver
+            )
+            HorizontalDivider(color = Edge)
+            SettingToggle(
+                "Картинка в картинке",
+                "Сворачивать видео в плавающее окно Android",
+                library.enablePip, library::updatePip
+            )
+        }
         SectionHeader("Приложение")
         Row(
             Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(17.dp))

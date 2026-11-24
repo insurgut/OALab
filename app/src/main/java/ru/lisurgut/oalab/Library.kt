@@ -76,6 +76,10 @@ class LocalLibrary(private val context: Context) {
         private set
     var mergeEpisodes by mutableStateOf(prefs.getBoolean("merge_episodes", false))
         private set
+    var dataSaver by mutableStateOf(prefs.getBoolean("data_saver", false))
+        private set
+    var enablePip by mutableStateOf(prefs.getBoolean("pip_enabled", true))
+        private set
     var autoplay by mutableStateOf(prefs.getBoolean("autoplay", false))
         private set
     var seekSeconds by mutableIntStateOf(prefs.getInt("seek", 10))
@@ -183,6 +187,24 @@ class LocalLibrary(private val context: Context) {
             .apply()
     }
 
+    fun updateDataSaver(value: Boolean) {
+        dataSaver = value
+        prefs.edit().putBoolean("data_saver", value).apply()
+    }
+    fun updatePip(value: Boolean) {
+        enablePip = value
+        prefs.edit().putBoolean("pip_enabled", value).apply()
+    }
+    fun selectQuality(streams: List<StreamVariant>): StreamVariant? {
+        val sorted = streams.sortedByDescending { it.popularity }
+        return if (dataSaver) sorted.firstOrNull { it.popularity <= 480 }
+            ?: sorted.lastOrNull() else sorted.firstOrNull()
+    }
+    fun progressPercent(anime: Anime, episode: Int, durationMs: Long): Int {
+        if (durationMs <= 0L) return 0
+        return (episodePosition(anime, episode).toDouble() / durationMs * 100.0)
+            .toInt().coerceIn(0, 100)
+    }
     fun updateAutoplay(value: Boolean) {
         autoplay = value
         prefs.edit().putBoolean("autoplay", value).apply()

@@ -42,7 +42,7 @@ fun WatchResolverScreen(
             library.saveResolvedStreams(request.anime, streams)
             val variants = streams.filter { it.episode == request.episode }
             val preferred = variants.firstOrNull { it.url == request.preferredUrl }
-            val selected = preferred ?: variants.maxByOrNull { it.popularity }
+            val selected = preferred ?: library.selectQuality(variants)
             if (selected == null) {
                 error = "У AniLibria пока нет доступной серии " + request.episode +
                     " для этого аниме."
