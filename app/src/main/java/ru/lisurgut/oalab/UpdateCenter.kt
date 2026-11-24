@@ -61,6 +61,9 @@ object OAlabUpdates {
     val changes = listOf('+', '-', '*')
     @Volatile private var lastNetworkAttemptMs = 0L
     @Volatile private var cachedScan: UpdateScan? = null
+    @Volatile private var publicFeedHealthy = false
+    @Volatile private var lastManifestBody: String? = null
+    @Volatile private var lastManifestEtag: String? = null
 
     fun parseChangelog(raw: String): List<ChangeLine> = raw.lines()
         .map { it.trim() }
@@ -75,11 +78,18 @@ object OAlabUpdates {
         connection.readTimeout = 12_000
         connection.setRequestProperty("Accept", "application/vnd.github+json")
         connection.setRequestProperty("User-Agent", "OAlab-Android-Updater")
+        if (uri == ANONYMOUS_UPDATES) {
+            lastManifestEtag?.let { connection.setRequestProperty("If-None-Match", it) }
+        }
         try {
             val status = connection.responseCode
+            if (status == HttpURLConnection.HTTP_NOT_MODIFIED &&
+                uri == ANONYMOUS_UPDATES && lastManifestBody != null) {
+                return lastManifestBody!!
+            }
             if (status == 404) error("GitHub-репозиторий закрыт для публичной проверки обновлений.")
             if (status !in 200..299) error("GitHub HTTP " + status)
-            return connection.inputStream.bufferedReader().use { reader ->
+            val result = connection.inputStream.bufferedReader().use { reader ->
                 val out = StringBuilder()
                 val buffer = CharArray(4096)
                 while (true) {
@@ -90,6 +100,11 @@ object OAlabUpdates {
                 }
                 out.toString()
             }
+            if (uri == ANONYMOUS_UPDATES) {
+                lastManifestBody = result
+                lastManifestEtag = connection.getHeaderField("ETag")
+            }
+            return result
         } finally { connection.disconnect() }
     }
 
@@ -104,7 +119,8 @@ object OAlabUpdates {
                 lastAttemptMs = lastNetworkAttemptMs,
                 resultPresent = previous != null,
                 lastError = previous?.error != null,
-                forced = force
+                forced = force,
+                publicFeedActive = publicFeedHealthy
             )) {
             return@withContext previous ?: UpdateScan(checked = false)
         }
@@ -116,6 +132,7 @@ object OAlabUpdates {
             // If Pages is available, updates work without GitHub login.
             try {
                 val manifest = org.json.JSONObject(getText(ANONYMOUS_UPDATES))
+                publicFeedHealthy = true
                 val version = manifest.optString("version")
                 val apk = manifest.optString("apk")
                 val notesUrl = manifest.optString("notes")
@@ -137,7 +154,8 @@ object OAlabUpdates {
                     return@withContext upToDate
                 }
             } catch (_: Exception) {
-                // Fallback for public GitHub repositories if Pages is not configured.
+                publicFeedHealthy = false
+                // Fallback only when the publicly hosted feed is unavailable.
             }
             val versions = JSONArray(getText(RELEASES))
             for (index in 0 until versions.length()) {

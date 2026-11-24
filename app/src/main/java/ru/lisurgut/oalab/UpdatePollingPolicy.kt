@@ -11,11 +11,13 @@ object UpdatePollingPolicy {
         lastAttemptMs: Long,
         resultPresent: Boolean,
         lastError: Boolean,
-        forced: Boolean
+        forced: Boolean,
+        publicFeedActive: Boolean = false
     ): Boolean {
         if (forced || !resultPresent) return true
         if (elapsedMs < lastAttemptMs) return true
-        val cooldown = if (lastError) RETRY_ON_ERROR_MS else NETWORK_REFRESH_MS
+        val cooldown = if (publicFeedActive) UI_REFRESH_MS
+            else if (lastError) RETRY_ON_ERROR_MS else NETWORK_REFRESH_MS
         return elapsedMs - lastAttemptMs >= cooldown
     }
 

@@ -12,6 +12,15 @@ class UpdatePollingPolicyTest {
         assertTrue(UpdatePollingPolicy.shouldRequest(300_000, 0, true, false, false))
     }
 
+    @Test fun publicFeedChecksEachFiveSeconds() {
+        assertFalse(UpdatePollingPolicy.shouldRequest(
+            4_999, 0, true, false, false, publicFeedActive = true
+        ))
+        assertTrue(UpdatePollingPolicy.shouldRequest(
+            5_000, 0, true, false, false, publicFeedActive = true
+        ))
+    }
+
     @Test fun retryAndRefresh() {
         assertFalse(UpdatePollingPolicy.shouldRequest(119_000, 0, true, true, false))
         assertTrue(UpdatePollingPolicy.shouldRequest(120_000, 0, true, true, false))
