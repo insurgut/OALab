@@ -186,6 +186,11 @@ fun PlumHomeScreen(
                 PlumMetric("Просмотрено",library.watched().size.toString())
             }
         }
+        item(key = "weekly-upcoming-releases") {
+            Spacer(Modifier.height(9.dp))
+            UpcomingScheduleSection(library = library, onOpen = onOpen)
+            Spacer(Modifier.height(8.dp))
+        }
         if(error!=null)item{ErrorPanel(error,onRetry)}
         if(loading && catalog.isEmpty())item{LinearProgressIndicator(Modifier.fillMaxWidth())}
         item {
