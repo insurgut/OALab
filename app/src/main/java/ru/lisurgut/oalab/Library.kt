@@ -306,6 +306,30 @@ class LocalLibrary(private val context: Context) {
             .filter { it.id.startsWith("aniliberty:") }
     } catch (_: Exception) { emptyList() }
 
+    /** Last known AniLibria weekday schedule, retained for offline home screen. */
+    fun cachedWeeklySchedule(): List<ScheduledAnime> = try {
+        val raw = JSONArray(prefs.getString("weekly_schedule", "[]") ?: "[]")
+        (0 until raw.length()).mapNotNull {
+            raw.optJSONObject(it)?.let(ScheduledAnime::fromJson)
+        }
+    } catch (_: Exception) { emptyList() }
+
+    fun weeklyScheduleCacheFresh(): Boolean {
+        val saved = prefs.getLong("weekly_schedule_saved_at", 0L)
+        val age = System.currentTimeMillis() - saved
+        return age in 0L..(30L * 60_000L) && cachedWeeklySchedule().isNotEmpty()
+    }
+
+    fun saveWeeklySchedule(schedule: List<ScheduledAnime>) {
+        val valid = schedule
+            .filter { it.dayOfWeek in 1..7 && it.anime.id.startsWith("aniliberty:") }
+            .distinctBy { it.dayOfWeek to it.anime.id }
+        prefs.edit()
+            .putString("weekly_schedule", JSONArray(valid.map { it.toJson() }).toString())
+            .putLong("weekly_schedule_saved_at", System.currentTimeMillis())
+            .apply()
+    }
+
     fun saveResolvedStreams(anime: Anime, variants: List<StreamVariant>) {
         streams[anime.id] = variants.filter { it.source == "AniLiberty" }
     }
