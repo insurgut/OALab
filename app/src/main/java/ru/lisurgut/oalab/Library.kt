@@ -93,6 +93,14 @@ class LocalLibrary(private val context: Context) {
         prefs.getStringSet("recommendation_genres", emptySet())?.toSet() ?: emptySet()
     )
         private set
+    var recommendationMode by mutableStateOf(
+        runCatching {
+            RecommendationMode.valueOf(
+                prefs.getString("recommendation_mode", "PERSONAL") ?: "PERSONAL"
+            )
+        }.getOrDefault(RecommendationMode.PERSONAL)
+    )
+        private set
     var enablePip by mutableStateOf(prefs.getBoolean("pip_enabled", true))
         private set
     var autoplay by mutableStateOf(prefs.getBoolean("autoplay", false))
@@ -236,6 +244,10 @@ class LocalLibrary(private val context: Context) {
     fun clearRecommendationGenres() {
         recommendationGenres = emptySet()
         prefs.edit().remove("recommendation_genres").apply()
+    }
+    fun updateRecommendationMode(mode: RecommendationMode) {
+        recommendationMode = mode
+        prefs.edit().putString("recommendation_mode", mode.name).apply()
     }
     fun toggleRecommendationGenre(genre: String) {
         val sanitized = genre.trim().take(75)
