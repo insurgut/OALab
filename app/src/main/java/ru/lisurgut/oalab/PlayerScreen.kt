@@ -1,15 +1,17 @@
 package ru.lisurgut.oalab
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +29,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -34,7 +37,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToLong
 
-/** Fullscreen landscape Media3 player. All streams are AniLiberty HLS. */
+private fun mediaItem(variant: StreamVariant): MediaItem {
+    val builder = MediaItem.Builder().setUri(variant.url)
+        .setMediaId(variant.episode.toString())
+    if (variant.url.contains(".m3u8", ignoreCase = true))
+        builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+    return builder.build()
+}
+
+@OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
     request: PlaybackRequest,
@@ -44,54 +55,102 @@ fun PlayerScreen(
     onSelect: (StreamVariant) -> Unit
 ) {
     val context = LocalContext.current
-    val player = remember { ExoPlayer.Builder(context).build() }
-    val activeRequest by rememberUpdatedState(request)
-    val onSelectCurrent by rememberUpdatedState(onSelect)
-    val tried = remember { mutableStateListOf<String>() }
+    val player = remember {
+        ExoPlayer.Builder(context).build().apply {
+            preloadConfiguration = ExoPlayer.PreloadConfiguration(5_000_000L)
+        }
+    }
+    val now by rememberUpdatedState(request)
+    val selectedCallback by rememberUpdatedState(onSelect)
+    val streams = library.variantsFor(request.anime)
+    val merged = library.mergeEpisodes
+    val queue = if (merged) {
+        streams.groupBy { it.episode }.toSortedMap().values.mapNotNull { choices ->
+            choices.maxByOrNull { it.popularity }
+        }.map {
+            if (it.episode == request.episode) request.stream else it
+        }
+    } else listOf(request.stream)
+
+    var applied by remember { mutableStateOf(emptyList<StreamVariant>()) }
+    var appliedMerged by remember { mutableStateOf(false) }
+    var appliedAnime by remember { mutableStateOf("") }
+    var currentIndex by remember { mutableIntStateOf(0) }
     var time by remember { mutableLongStateOf(0L) }
     var length by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
-    var show by remember { mutableStateOf(true) }
+    var controls by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var suppressedNext by remember { mutableStateOf(false) }
+    val tried = remember { mutableStateListOf<String>() }
     var lastEpisode by remember { mutableIntStateOf(-1) }
-    var lastUrl by remember { mutableStateOf("") }
+
+    val active = queue.getOrNull(currentIndex) ?: request.stream
+    val episode = active.episode
+    val recordedDurations = remember { mutableStateMapOf<Int, Long>() }
+    val durations = queue.map { item ->
+        (item.details?.durationMs ?: 0L).takeIf { it > 0L }
+            ?: recordedDurations[item.episode] ?: 0L
+    }
+    val completeDuration = if (durations.isNotEmpty() && durations.all { it > 0L })
+        durations.sum() else 0L
+    val episodeOffset = durations.take(currentIndex).sum()
+    val totalPosition = if (merged) episodeOffset + time else time
+    val displayDuration = if (merged) completeDuration else length
+    val displayedPosition = if (merged) totalPosition else time
+
+    val latestQueue by rememberUpdatedState(queue)
+    val latestDurations by rememberUpdatedState(durations)
+    val latestTotal by rememberUpdatedState(completeDuration)
+    val latestIndex by rememberUpdatedState(currentIndex)
 
     DisposableEffect(player) {
         onFullscreen(true)
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
-            override fun onPlayerError(playbackError: PlaybackException) {
-                val active = activeRequest
-                if (active.stream.url !in tried) tried.add(active.stream.url)
-                val replacement = library.variantsFor(active.anime)
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                currentIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+                controls = false
+                suppressedNext = false
+                tried.clear()
+            }
+            override fun onPlayerError(cause: PlaybackException) {
+                val current = latestQueue.getOrNull(player.currentMediaItemIndex)
+                    ?: now.stream
+                if (current.url !in tried) tried.add(current.url)
+                val backup = library.variantsFor(now.anime)
                     .filter {
-                        it.source == "AniLiberty" && it.episode == active.episode &&
+                        it.source == "AniLiberty" &&
+                            it.episode == current.episode &&
                             it.url !in tried
                     }.maxByOrNull { it.popularity }
-                if (replacement != null) {
+                if (backup != null) {
                     error = null
-                    onSelectCurrent(replacement)
+                    selectedCallback(backup)
                 } else {
-                    error = playbackError.localizedMessage ?: "Видеопоток недоступен"
-                    show = true
+                    error = cause.localizedMessage ?: "Не удалось воспроизвести серию"
+                    controls = true
                 }
             }
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED && library.autoplay) {
-                    val active = activeRequest
-                    val next = library.variantsFor(active.anime)
-                        .filter {
-                            it.source == "AniLiberty" && it.episode == active.episode + 1
-                        }.maxByOrNull { it.popularity }
-                    if (next != null) onSelectCurrent(next)
+                if (state == Player.STATE_ENDED && !library.mergeEpisodes && library.autoplay) {
+                    val next = library.variantsFor(now.anime)
+                        .filter { it.episode == now.episode + 1 }
+                        .maxByOrNull { it.popularity }
+                    if (next != null) selectedCallback(next)
                 }
             }
         }
         player.addListener(listener)
         onDispose {
-            val active = activeRequest
-            library.rememberPosition(
-                active.anime, active.episode, player.currentPosition.coerceAtLeast(0L)
+            val idx = player.currentMediaItemIndex.coerceAtLeast(0)
+            val stream = applied.getOrNull(idx) ?: now.stream
+            val segmentPosition = player.currentPosition.coerceAtLeast(0L)
+            val offset = if (appliedMerged) {
+                applied.take(idx).sumOf { it.details?.durationMs ?: 0L }
+            } else 0L
+            library.recordPlayback(
+                now.anime, stream.episode, segmentPosition, offset + segmentPosition
             )
             player.removeListener(listener)
             player.release()
@@ -99,47 +158,121 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(request.episode) { tried.clear() }
-
-    LaunchedEffect(request.stream.url, request.episode) {
-        val resume = when {
-            lastUrl.isNotBlank() && lastEpisode == request.episode ->
-                player.currentPosition.coerceAtLeast(0L)
-            library.entry(request.anime)?.lastEpisode == request.episode ->
-                library.entry(request.anime)?.lastPosition ?: 0L
-            else -> 0L
+    // Rebuild the queue only when its contents/mode change, preserving actual
+    // per-episode playhead when the user switches merged playback on/off.
+    LaunchedEffect(queue.map { it.url }, merged, request.episode, request.stream.url) {
+        val oldStream = applied.getOrNull(player.currentMediaItemIndex)
+        val sameAnime = appliedAnime == request.anime.id
+        val toggleOnly = sameAnime && appliedMerged != merged
+        val desiredEpisode = if (toggleOnly) oldStream?.episode ?: request.episode
+            else request.episode
+        val savedPosition = if (sameAnime && oldStream?.episode == desiredEpisode) {
+            player.currentPosition.coerceAtLeast(0L)
+        } else {
+            library.episodePosition(request.anime, desiredEpisode)
+                .takeIf { it > 0L } ?:
+                if (library.entry(request.anime)?.lastEpisode == desiredEpisode)
+                    library.entry(request.anime)?.lastPosition ?: 0L else 0L
         }
-        lastUrl = request.stream.url
-        lastEpisode = request.episode
+        val start = queue.indexOfFirst { it.episode == desiredEpisode }.coerceAtLeast(0)
+        applied = queue
+        appliedAnime = request.anime.id
+        appliedMerged = merged
+        currentIndex = start
+        tried.clear()
         error = null
-        val builder = MediaItem.Builder().setUri(request.stream.url)
-        if (request.stream.url.contains(".m3u8", ignoreCase = true))
-            builder.setMimeType(MimeTypes.APPLICATION_M3U8)
-        player.setMediaItem(builder.build())
+        player.setMediaItems(queue.map(::mediaItem), start, savedPosition)
         player.prepare()
-        if (resume > 0L) player.seekTo(resume)
         player.playWhenReady = true
     }
 
-    LaunchedEffect(player, request.episode) {
-        var count = 0
+    LaunchedEffect(request.anime.id, episode) {
+        suppressedNext = false
+        lastEpisode = episode
+    }
+
+    LaunchedEffect(player, episode) {
+        var tick = 0
         while (isActive) {
-            time = player.currentPosition.coerceAtLeast(0L)
+            val position = player.currentPosition.coerceAtLeast(0L)
+            time = position
             length = player.duration.takeIf { it > 0L } ?: 0L
-            if (++count % 12 == 0 && time > 0L)
-                library.rememberPosition(request.anime, request.episode, time)
+            if (length > 0L) recordedDurations[episode] = length
+
+            val window = active.details
+            val opening = window?.opening
+            val ending = window?.ending
+            val target = when {
+                library.skipOpenings && opening?.contains(position) == true -> opening
+                library.skipEndings && ending?.contains(position) == true -> ending
+                else -> null
+            }
+            if (target != null && player.isPlaying) {
+                if (merged && currentIndex < queue.lastIndex &&
+                    target === ending && target.stopMs >= (window.durationMs - 2_000L)) {
+                    player.seekToNextMediaItem()
+                } else {
+                    player.seekTo(target.stopMs)
+                }
+            }
+            if (++tick % 12 == 0 && position > 0L) {
+                val offset = if (merged) durations.take(currentIndex).sum() else 0L
+                library.recordPlayback(
+                    request.anime, episode, position, offset + position
+                )
+            }
             delay(500)
         }
     }
-    LaunchedEffect(show, request.stream.url) {
-        if (show && error == null) {
+
+    LaunchedEffect(controls, request.stream.url) {
+        if (controls && error == null) {
             delay(4_000)
-            show = false
+            controls = false
         }
     }
 
-    val accent = MaterialTheme.colorScheme.primary
-    val accentContent = MaterialTheme.colorScheme.onPrimary
+    funSeek@ run {
+        // Local helper is a value, so slider and skip controls share mapping.
+    }
+
+    val seek: (Long) -> Unit = { target ->
+        if (!merged || completeDuration <= 0L) {
+            player.seekTo(target.coerceIn(0L, length.coerceAtLeast(0L)))
+        } else {
+            var remainder = target.coerceIn(0L, completeDuration)
+            var destination = queue.lastIndex
+            for (i in durations.indices) {
+                if (remainder < durations[i] || i == durations.lastIndex) {
+                    destination = i
+                    break
+                }
+                remainder -= durations[i]
+            }
+            player.seekTo(destination, remainder.coerceAtMost(durations[destination]))
+            currentIndex = destination
+        }
+        controls = true
+    }
+
+    val nextStream = if (merged) null else streams.filter {
+        it.episode > episode
+    }.groupBy { it.episode }.toSortedMap().values.firstOrNull()
+        ?.maxByOrNull { it.popularity }
+    val remaining = if (length > 0L) length - time else Long.MAX_VALUE
+    val revealNext = !merged && nextStream != null &&
+        remaining in 1L..75_000L && !suppressedNext
+
+    val activeOpening = active.details?.opening?.takeIf { it.contains(time) }
+    val activeEnding = active.details?.ending?.takeIf { it.contains(time) }
+    val skip = when {
+        activeOpening != null && !library.skipOpenings -> activeOpening
+        activeEnding != null && !library.skipEndings -> activeEnding
+        else -> null
+    }
+    val skipText = if (skip === activeOpening) "Пропустить опенинг"
+        else "Пропустить эндинг"
+
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         AndroidView(
             factory = { ctx ->
@@ -153,104 +286,210 @@ fun PlayerScreen(
             update = { it.player = player },
             modifier = Modifier.fillMaxSize()
         )
-        Box(Modifier.fillMaxSize().clickable { show = !show })
-        if (show) {
+        Box(Modifier.fillMaxSize().clickable { controls = !controls })
+
+        if (controls) {
             Box(Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = .65f),
-                    .28f to Color.Transparent,
-                    .70f to Color.Transparent,
-                    1f to Color.Black.copy(alpha = .78f)
+                    0f to Color.Black.copy(alpha = .7f),
+                    .25f to Color.Transparent,
+                    .68f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = .8f)
                 )
             ))
             Row(
                 Modifier.align(Alignment.TopStart).fillMaxWidth()
-                    .padding(start = 9.dp, end = 15.dp, top = 5.dp),
+                    .padding(start = 9.dp, end = 18.dp, top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Rounded.ArrowBack, "Назад", tint = Color.White,
-                        modifier = Modifier.size(20.dp))
+                        modifier = Modifier.size(21.dp))
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(
                     request.anime.title, modifier = Modifier.weight(1f),
-                    color = Color.White, fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color.White, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.width(10.dp))
-                Text("Серия " + request.episode, color = Color.White.copy(alpha = .82f),
-                    fontSize = 10.sp)
+                Text(
+                    "Серия " + episode + if (merged) " · вместе" else "",
+                    color = Color.White.copy(alpha = .8f), fontSize = 10.sp
+                )
             }
-            // One contiguous control with 64 / 154 / 64 dp touch surfaces.
+
             Row(
                 Modifier.align(Alignment.Center)
                     .clip(RoundedCornerShape(14.dp))
                     .border(1.dp, Color.White.copy(alpha = .2f), RoundedCornerShape(14.dp))
                     .background(Color.Black.copy(alpha = .7f)),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(0.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(Modifier.width(64.dp).height(42.dp).clickable {
-                    player.seekTo(
-                        (player.currentPosition - library.seekSeconds * 1_000L)
-                            .coerceAtLeast(0L)
-                    )
-                    show = true
+                    seek(displayedPosition - library.seekSeconds * 1_000L)
                 }, contentAlignment = Alignment.Center) {
                     Text("−" + library.seekSeconds + "с", color = Color.White,
-                        fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        fontSize = 12.sp)
                 }
                 Box(
                     Modifier.width(154.dp).height(42.dp)
-                        .background(accent)
-                        .clickable { if (player.isPlaying) player.pause() else player.play() },
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable {
+                            if (player.isPlaying) player.pause() else player.play()
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            if (playing) "Пауза" else "Воспроизвести",
-                            tint = accentContent, modifier = Modifier.size(21.dp)
+                            if (playing) "Пауза" else "Воспроизведение",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(21.dp)
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text(if (playing) "Пауза" else "Смотреть",
-                            color = accentContent, fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp)
+                        Text(
+                            if (playing) "Пауза" else "Смотреть",
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.SemiBold, fontSize = 13.sp
+                        )
                     }
                 }
                 Box(Modifier.width(64.dp).height(42.dp).clickable {
-                    val target = player.currentPosition + library.seekSeconds * 1_000L
-                    player.seekTo(if (length > 0L) target.coerceAtMost(length) else target)
-                    show = true
+                    seek(displayedPosition + library.seekSeconds * 1_000L)
                 }, contentAlignment = Alignment.Center) {
                     Text("+" + library.seekSeconds + "с", color = Color.White,
-                        fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        fontSize = 12.sp)
                 }
             }
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 6.dp)) {
-                Slider(
-                    value = if (length > 0L)
-                        (time.toFloat() / length).coerceIn(0f, 1f) else 0f,
-                    onValueChange = { progress ->
-                        if (length > 0L) {
-                            val target = (progress * length).roundToLong()
-                            time = target
-                            player.seekTo(target)
+            Column(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 5.dp)
+            ) {
+                if (merged && completeDuration > 0L) {
+                    Canvas(Modifier.fillMaxWidth().height(5.dp)) {
+                        var prefix = 0L
+                        for (i in 0 until durations.lastIndex) {
+                            prefix += durations[i]
+                            val x = size.width * (prefix.toFloat() / completeDuration)
+                            drawLine(
+                                color = Color.White.copy(alpha = .68f),
+                                start = androidx.compose.ui.geometry.Offset(x, 0f),
+                                end = androidx.compose.ui.geometry.Offset(x, size.height),
+                                strokeWidth = 2.dp.toPx()
+                            )
                         }
+                    }
+                }
+                Slider(
+                    value = if (displayDuration > 0L)
+                        (displayedPosition.toFloat() / displayDuration).coerceIn(0f, 1f)
+                    else 0f,
+                    onValueChange = { fraction ->
+                        if (displayDuration > 0L)
+                            seek((fraction * displayDuration).roundToLong())
                     },
-                    enabled = length > 0L,
-                    modifier = Modifier.fillMaxWidth().height(20.dp),
+                    enabled = displayDuration > 0L,
+                    modifier = Modifier.fillMaxWidth().height(22.dp),
                     colors = SliderDefaults.colors(
-                        thumbColor = accent, activeTrackColor = accent,
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
                         inactiveTrackColor = Color.White.copy(alpha = .35f)
                     )
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(playerTime(time), color = Color.White.copy(alpha = .8f), fontSize = 10.sp)
-                    Text(playerTime(length), color = Color.White.copy(alpha = .8f), fontSize = 10.sp)
+                    Text(episodeDuration(displayedPosition), color = Color.White,
+                        fontSize = 10.sp)
+                    Text(
+                        if (displayDuration > 0L) episodeDuration(displayDuration)
+                        else "Длительность неизвестна",
+                        color = Color.White.copy(alpha = .82f), fontSize = 10.sp
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = skip != null && error == null,
+            enter = fadeIn(), exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomEnd)
+                .padding(end = 20.dp, bottom = 76.dp)
+        ) {
+            FilledTonalButton(
+                onClick = {
+                    if (skip != null) {
+                        if (merged && skip === activeEnding &&
+                            currentIndex < queue.lastIndex &&
+                            skip.stopMs >= (active.details?.durationMs ?: Long.MAX_VALUE) - 2_000L
+                        ) player.seekToNextMediaItem()
+                        else player.seekTo(skip.stopMs)
+                    }
+                },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 3.dp),
+                modifier = Modifier.height(35.dp),
+                shape = RoundedCornerShape(11.dp)
+            ) {
+                Icon(Icons.Rounded.SkipNext, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(skipText, fontSize = 11.sp)
+            }
+        }
+
+        AnimatedVisibility(
+            visible = revealNext && error == null,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 3 }),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopEnd)
+                .padding(top = 54.dp, end = 17.dp)
+        ) {
+            if (nextStream != null) {
+                Row(
+                    Modifier.width(310.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = .95f))
+                        .padding(9.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AnimatedEpisodePreview(
+                        nextStream, Modifier.size(width = 110.dp, height = 67.dp)
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                "Серия " + nextStream.episode,
+                                modifier = Modifier.weight(1f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Icon(
+                                Icons.Rounded.Close, "Скрыть",
+                                modifier = Modifier.size(19.dp)
+                                    .clickable { suppressedNext = true },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            nextStream.details?.title ?: "Следующая серия",
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            episodeDuration(nextStream.details?.durationMs ?: 0L),
+                            fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = { selectedCallback(nextStream) },
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.height(26.dp)
+                        ) {
+                            Text("Следующая серия", fontSize = 11.sp)
+                            Icon(Icons.Rounded.ChevronRight, null,
+                                Modifier.size(16.dp))
+                        }
+                    }
                 }
             }
         }
@@ -258,37 +497,20 @@ fun PlayerScreen(
         if (error != null) {
             Column(
                 Modifier.align(Alignment.Center).padding(20.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surface).padding(15.dp),
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(15.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("Ошибка воспроизведения", fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.height(5.dp))
-                Text(error!!.take(160), maxLines = 3, fontSize = 11.sp,
+                Text(error!!.take(180), maxLines = 3, fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
-                TextButton(onClick = {
-                    tried.clear()
-                    error = null
-                    player.prepare()
-                    player.play()
-                }) {
-                    Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Повторить", fontSize = 12.sp)
+                TextButton(onClick = { error = null; player.prepare(); player.play() }) {
+                    Text("Повторить")
                 }
             }
         }
     }
-}
-
-private fun playerTime(millis: Long): String {
-    val seconds = millis.coerceAtLeast(0L) / 1_000
-    val hours = seconds / 3_600
-    val minutes = (seconds % 3_600) / 60
-    val remainder = seconds % 60
-    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, remainder)
-    else "%02d:%02d".format(minutes, remainder)
 }
