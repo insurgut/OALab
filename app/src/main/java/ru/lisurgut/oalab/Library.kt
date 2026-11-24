@@ -80,6 +80,19 @@ class LocalLibrary(private val context: Context) {
         private set
     var dataSaver by mutableStateOf(prefs.getBoolean("data_saver", false))
         private set
+    /** 0 = network-adaptive auto, otherwise exact requested stream resolution. */
+    var videoQuality by mutableIntStateOf(
+        prefs.getInt("video_quality", 0).takeIf { it in setOf(0, 480, 720, 1080) } ?: 0
+    )
+        private set
+    var hiddenRecommendations by mutableStateOf(
+        prefs.getStringSet("hidden_recommendations", emptySet())?.toSet() ?: emptySet()
+    )
+        private set
+    var recommendationGenres by mutableStateOf(
+        prefs.getStringSet("recommendation_genres", emptySet())?.toSet() ?: emptySet()
+    )
+        private set
     var enablePip by mutableStateOf(prefs.getBoolean("pip_enabled", true))
         private set
     var autoplay by mutableStateOf(prefs.getBoolean("autoplay", false))
@@ -197,8 +210,60 @@ class LocalLibrary(private val context: Context) {
         enablePip = value
         prefs.edit().putBoolean("pip_enabled", value).apply()
     }
+    fun updateVideoQuality(quality: Int) {
+        require(quality in setOf(0, 480, 720, 1080))
+        videoQuality = quality
+        prefs.edit().putInt("video_quality", quality).apply()
+    }
+
+    fun hideRecommendation(anime: Anime) {
+        hiddenRecommendations = hiddenRecommendations + anime.id
+        prefs.edit().putStringSet(
+            "hidden_recommendations", hiddenRecommendations.toSet()
+        ).apply()
+    }
+    fun resetHiddenRecommendations() {
+        hiddenRecommendations = emptySet()
+        prefs.edit().remove("hidden_recommendations").apply()
+    }
+    fun toggleRecommendationGenre(genre: String) {
+        val sanitized = genre.trim().take(75)
+        if (sanitized.isBlank()) return
+        recommendationGenres = if (sanitized in recommendationGenres)
+            recommendationGenres - sanitized else recommendationGenres + sanitized
+        prefs.edit().putStringSet(
+            "recommendation_genres", recommendationGenres.toSet()
+        ).apply()
+    }
+    fun recommendationCandidates(): List<Anime> = try {
+        val data = prefs.getString("recommendation_candidates", "[]") ?: "[]"
+        val array = JSONArray(data)
+        (0 until array.length()).mapNotNull {
+            array.optJSONObject(it)?.let(Anime::fromJson)
+        }.filter { it.id.startsWith("aniliberty:") }
+    } catch (_: Exception) { emptyList() }
+
+    fun recommendationCacheFresh(): Boolean {
+        val cachedAt = prefs.getLong("recommendation_cached_at", 0L)
+        val elapsed = System.currentTimeMillis() - cachedAt
+        return recommendationCandidates().isNotEmpty() && elapsed in 0..(30 * 60 * 1000L)
+    }
+    fun saveRecommendationCandidates(animes: List<Anime>) {
+        val valid = animes.asSequence().filter { it.id.startsWith("aniliberty:") }
+            .distinctBy { it.id }.take(250).toList()
+        prefs.edit().putString(
+            "recommendation_candidates",
+            JSONArray(valid.map { it.toJson() }).toString()
+        ).putLong("recommendation_cached_at", System.currentTimeMillis()).apply()
+    }
+
     fun selectQuality(streams: List<StreamVariant>): StreamVariant? {
         val sorted = streams.sortedByDescending { it.popularity }
+        if (videoQuality != 0) {
+            return sorted.firstOrNull { it.popularity == videoQuality }
+                ?: sorted.firstOrNull { it.popularity < videoQuality }
+                ?: sorted.lastOrNull()
+        }
         if (dataSaver) return sorted.firstOrNull { it.popularity <= 480 }
             ?: sorted.lastOrNull()
         val capabilities = try {
