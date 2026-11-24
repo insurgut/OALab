@@ -77,6 +77,11 @@ object RecommendationEngine {
         val source: Anime? = null,
         val genres: List<String> = emptyList()
     )
+    private data class Seed(
+        val entry: LibraryEntry,
+        val genres: Set<String>,
+        val description: Set<String>
+    )
     private data class Scored(
         val anime: Anime,
         val overall: Double,
@@ -119,16 +124,18 @@ object RecommendationEngine {
             it.anime.id.startsWith("aniliberty:") && weight(it) > 0.0
         }.sortedWith(compareByDescending<LibraryEntry> { weight(it) }
             .thenByDescending { it.lastPosition }).take(30)
+        val seeds = positive.map { Seed(it, genreKeys(it.anime), words(it.anime.description)) }
         val negative = history.filter { weight(it) < 0.0 }
+            .map { genreKeys(it.anime) to (-weight(it)) }
         val freq = pool.flatMap { genreKeys(it) }
             .groupingBy { it }.eachCount()
         fun idf(genre: String): Double =
             1.0 + ln((pool.size + 1.0) / ((freq[genre] ?: 0) + 1.0))
 
         val taste = mutableMapOf<String, Double>()
-        for (entry in positive) {
-            for (g in genreKeys(entry.anime)) {
-                taste[g] = (taste[g] ?: 0.0) + weight(entry) * idf(g)
+        for (seed in seeds) {
+            for (g in seed.genres) {
+                taste[g] = (taste[g] ?: 0.0) + weight(seed.entry) * idf(g)
             }
         }
         for (g in chosenGenres) {
@@ -143,14 +150,15 @@ object RecommendationEngine {
                 .distinctBy(::normalize)
                 .sortedByDescending { taste[normalize(it)] ?: 0.0 }
             val likedAffinity = gs.sumOf { taste[it] ?: 0.0 } / tasteSum
-            val unpopular = negative.sumOf {
-                jaccard(gs, genreKeys(it.anime)) * (-weight(it)) * .14
+            val unpopular = negative.sumOf { (dislikedGenres, penalty) ->
+                jaccard(gs, dislikedGenres) * penalty * .14
             }.coerceAtMost(1.15)
 
             val evidence = mutableListOf<Evidence>()
-            for (entry in positive) {
+            for (seedInfo in seeds) {
+                val entry = seedInfo.entry
                 val seed = entry.anime
-                val seedGenres = genreKeys(seed)
+                val seedGenres = seedInfo.genres
                 val overlap = gs.intersect(seedGenres)
                 val similarity = jaccard(gs, seedGenres)
                 val seenWeight = weight(entry) / 5.0
@@ -181,7 +189,7 @@ object RecommendationEngine {
                     }
                 }
 
-                val seedWords = words(seed.description)
+                val seedWords = seedInfo.description
                 val sharedWords = description.intersect(seedWords)
                 if (sharedWords.size >= 2) {
                     val contentScore = sharedWords.size.toDouble() /
@@ -224,8 +232,8 @@ object RecommendationEngine {
             }
             // Discovery is an honest fallback with no invented reference anime.
             val novelty = if (positive.isEmpty()) 1.0
-                else 1.0 - (positive.maxOfOrNull {
-                    jaccard(gs, genreKeys(it.anime))
+                else 1.0 - (seeds.maxOfOrNull {
+                    jaccard(gs, it.genres)
                 } ?: 0.0)
             evidence += Evidence(
                 kind = RecommendationKind.DISCOVERY,
