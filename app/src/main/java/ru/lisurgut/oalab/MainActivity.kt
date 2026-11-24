@@ -24,18 +24,28 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val library = remember { LocalLibrary(applicationContext) }
+            var immersivePlayer by remember { mutableStateOf(false) }
             OALabTheme {
                 val background = MaterialTheme.colorScheme.background
                 val dark = isSystemInDarkTheme()
                 SideEffect {
                     window.statusBarColor = background.toArgb()
                     window.navigationBarColor = background.toArgb()
-                    window.decorView.systemUiVisibility = if (dark) 0
-                        else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                    window.decorView.systemUiVisibility = if (immersivePlayer) {
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    } else if (dark) 0
+                    else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+                        View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
                 }
                 OALabApp(
                     library = library,
                     fullscreen = { enabled ->
+                        immersivePlayer = enabled
                         requestedOrientation = if (enabled)
                             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED

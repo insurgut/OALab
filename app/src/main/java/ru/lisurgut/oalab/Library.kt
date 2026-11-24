@@ -75,9 +75,9 @@ class LocalLibrary(private val context: Context) {
 
     fun isFavorite(anime: Anime): Boolean = entry(anime)?.favorite ?: false
     fun status(anime: Anime): String = entry(anime)?.status ?: "Не смотрел"
-    fun favorites(): List<Anime> = entries.filter { it.favorite }.map { it.anime }
-    fun inProgress(): List<LibraryEntry> = entries.filter { it.status == "Смотрю" }
-    fun watched(): List<Anime> = entries.filter { it.status == "Просмотрено" }.map { it.anime }
+    fun favorites(): List<Anime> = entries.filter { it.favorite && it.anime.id.startsWith("aniliberty:") }.map { it.anime }
+    fun inProgress(): List<LibraryEntry> = entries.filter { it.status == "Смотрю" && it.anime.id.startsWith("aniliberty:") }
+    fun watched(): List<Anime> = entries.filter { it.status == "Просмотрено" && it.anime.id.startsWith("aniliberty:") }.map { it.anime }
 
     private fun change(anime: Anime, transform: (LibraryEntry) -> LibraryEntry) {
         val index = entries.indexOfFirst { same(it.anime, anime) }
@@ -107,7 +107,8 @@ class LocalLibrary(private val context: Context) {
     }
 
     fun preferredGenres(): List<String> =
-        entries.filter { it.favorite || it.status == "Просмотрено" || it.status == "Смотрю" }
+        entries.filter { it.anime.id.startsWith("aniliberty:") &&
+            (it.favorite || it.status == "Просмотрено" || it.status == "Смотрю") }
             .flatMap { it.anime.genres }.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.map { it.key }
 

@@ -181,7 +181,7 @@ fun PlumHomeScreen(
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=13.dp),
                 horizontalArrangement=Arrangement.SpaceBetween) {
-                PlumMetric("Избранное",library.entries.count{it.favorite}.toString())
+                PlumMetric("Избранное",library.entries.count{it.favorite && it.anime.id.startsWith("aniliberty:")}.toString())
                 PlumMetric("Смотрю",progress.size.toString())
                 PlumMetric("Просмотрено",library.watched().size.toString())
             }
@@ -294,11 +294,11 @@ fun PlumCatalogScreen(
 fun PlumLibraryScreen(library:LocalLibrary,onOpen:(Anime)->Unit,onPlay:(Anime)->Unit){
     var mode by remember{mutableStateOf("Избранное")}
     val records=when(mode){
-        "Избранное"->library.entries.filter{it.favorite}
-        "Смотрю"->library.entries.filter{it.status=="Смотрю"}
-        "Просмотрено"->library.entries.filter{it.status=="Просмотрено"}
-        "В планах"->library.entries.filter{it.status=="В планах"}
-        else->library.entries.toList()
+        "Избранное"->library.entries.filter{it.favorite && it.anime.id.startsWith("aniliberty:")}
+        "Смотрю"->library.entries.filter{it.status=="Смотрю" && it.anime.id.startsWith("aniliberty:")}
+        "Просмотрено"->library.entries.filter{it.status=="Просмотрено" && it.anime.id.startsWith("aniliberty:")}
+        "В планах"->library.entries.filter{it.status=="В планах" && it.anime.id.startsWith("aniliberty:")}
+        else->library.entries.filter{it.anime.id.startsWith("aniliberty:")}
     }
     LazyColumn(Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
         contentPadding=PaddingValues(start=16.dp,end=16.dp,bottom=110.dp)){
