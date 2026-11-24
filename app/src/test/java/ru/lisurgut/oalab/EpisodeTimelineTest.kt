@@ -8,7 +8,7 @@ class EpisodeTimelineTest {
 
     @Test
     fun summedDurationAndEpisodeBoundaries() {
-        assertEquals(210_000L, EpisodeTimeline.totalDuration(samples))
+        assertEquals(210_000L, EpisodeTimeline.totalDuration(samples)!!)
         assertEquals(EpisodeSeek(0, 0L), EpisodeTimeline.locate(samples, -10L))
         assertEquals(EpisodeSeek(0, 59_999L), EpisodeTimeline.locate(samples, 59_999L))
         assertEquals(EpisodeSeek(1, 0L), EpisodeTimeline.locate(samples, 60_000L))
@@ -18,9 +18,9 @@ class EpisodeTimelineTest {
 
     @Test
     fun globalProgressPreservesLocalEpisodePosition() {
-        assertEquals(65_000L, EpisodeTimeline.globalPosition(samples, 1, 5_000L))
+        assertEquals(65_000L, EpisodeTimeline.globalPosition(samples, 1, 5_000L)!!)
         assertEquals(EpisodeSeek(1, 5_000L), EpisodeTimeline.locate(samples, 65_000L))
-        assertEquals(210_000L, EpisodeTimeline.globalPosition(samples, 2, 30_000L))
+        assertEquals(210_000L, EpisodeTimeline.globalPosition(samples, 2, 30_000L)!!)
         assertNull(EpisodeTimeline.globalPosition(samples, 3, 2_000L))
     }
 

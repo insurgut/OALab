@@ -207,7 +207,7 @@ object EpisodeFrames {
 
                 for (i in missing) {
                     if (!currentCoroutineContext().isActive) break
-                    val target = ((i + 0.5) * duration / 10).toLong()
+                    val target = EpisodeTimeline.frameTimes(duration)[i]
                     val screenshot = try {
                         if (direct) frame(retriever, target)
                         else if (segments != null) segmentFrame(context, segments, target)

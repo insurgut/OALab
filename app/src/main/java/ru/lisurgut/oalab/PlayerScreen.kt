@@ -91,10 +91,11 @@ fun PlayerScreen(
         (item.details?.durationMs ?: 0L).takeIf { it > 0L }
             ?: recordedDurations[item.episode] ?: 0L
     }
-    val completeDuration = if (durations.isNotEmpty() && durations.all { it > 0L })
-        durations.sum() else 0L
+    val completeDuration = EpisodeTimeline.totalDuration(durations) ?: 0L
     val episodeOffset = durations.take(currentIndex).sum()
-    val totalPosition = if (merged) episodeOffset + time else time
+    val totalPosition = if (merged)
+        EpisodeTimeline.globalPosition(durations, currentIndex, time) ?: episodeOffset + time
+    else time
     val displayDuration = if (merged) completeDuration else length
     val displayedPosition = if (merged) totalPosition else time
 
@@ -231,17 +232,11 @@ fun PlayerScreen(
         if (!merged || completeDuration <= 0L) {
             player.seekTo(target.coerceIn(0L, length.coerceAtLeast(0L)))
         } else {
-            var remainder = target.coerceIn(0L, completeDuration)
-            var destination = queue.lastIndex
-            for (i in durations.indices) {
-                if (remainder < durations[i] || i == durations.lastIndex) {
-                    destination = i
-                    break
-                }
-                remainder -= durations[i]
+            val destination = EpisodeTimeline.locate(durations, target)
+            if (destination != null) {
+                player.seekTo(destination.index, destination.positionMs)
+                currentIndex = destination.index
             }
-            player.seekTo(destination, remainder.coerceAtMost(durations[destination]))
-            currentIndex = destination
         }
         controls = true
     }
@@ -360,10 +355,8 @@ fun PlayerScreen(
             ) {
                 if (merged && completeDuration > 0L) {
                     Canvas(Modifier.fillMaxWidth().height(5.dp)) {
-                        var prefix = 0L
-                        for (i in 0 until durations.lastIndex) {
-                            prefix += durations[i]
-                            val x = size.width * (prefix.toFloat() / completeDuration)
+                        for (fraction in EpisodeTimeline.boundaryFractions(durations)) {
+                            val x = size.width * fraction
                             drawLine(
                                 color = Color.White.copy(alpha = .68f),
                                 start = androidx.compose.ui.geometry.Offset(x, 0f),
