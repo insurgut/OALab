@@ -33,41 +33,61 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Configure permanent pinned signing identity
+      - name: Reuse or bootstrap PUBLIC DEVELOPMENT signing identity
         id: signing
-        env:
-          KEYSTORE_B64: ${{ secrets.OALAB_KEYSTORE_B64 }}
-          STORE_PASSWORD: ${{ secrets.OALAB_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.OALAB_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.OALAB_KEY_PASSWORD }}
-          CERT_SHA256: ${{ secrets.OALAB_CERT_SHA256 }}
         run: |
           set -euo pipefail
           umask 077
-          if [[ -z "$KEYSTORE_B64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" || -z "$CERT_SHA256" ]]; then
-            echo "::warning::No complete permanent signing identity. Do not publish temporary debug APKs."
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "### No APK published: signing secrets are not configured" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          # Owner-requested, intentionally insecure: this private key is public.
+          # Anyone can forge app updates. NEVER use for a production app.
+          ALIAS="oalab-public-dev"
+          PASSWORD="OAlab_PUBLIC_TEST_SIGNING_2026"
+          KEYSTORE_PATH="$RUNNER_TEMP/oalab-public-dev.p12"
+          KEYSTORE_B64="signing/oalab-public-dev.p12.b64"
+          PIN="signing/oalab-public-cert-sha256.txt"
+          mkdir -p signing
+          if [[ ! -s "$KEYSTORE_B64" ]]; then
+            if [[ -e "$PIN" ]]; then
+              echo "::error::Pinned signing identity exists but the private key is missing. Refusing rotation."
+              exit 1
+            fi
+            echo "::warning::Bootstrapping PUBLIC UNTRUSTED signing key. Anyone can forge app updates."
+            keytool -genkeypair -alias "$ALIAS" -keyalg RSA -keysize 3072 \
+              -sigalg SHA256withRSA -storetype PKCS12 -validity 36500 \
+              -keystore "$KEYSTORE_PATH" -storepass "$PASSWORD" -keypass "$PASSWORD" \
+              -dname "CN=OAlab PUBLIC DEV KEY, OU=UNTRUSTED TEST SIGNING, O=OAlab" \
+              -noprompt
+            base64 -w0 "$KEYSTORE_PATH" > "$KEYSTORE_B64"
+            printf '\n' >> "$KEYSTORE_B64"
+            FINGERPRINT="$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "$PASSWORD" -alias "$ALIAS" |
+              grep -m1 'SHA256:' | sed -E 's/.*SHA256:[[:space:]]*//' |
+              tr -d ':' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+            printf '%s\n' "$FINGERPRINT" > "$PIN"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -f "$KEYSTORE_B64" "$PIN"
+            git commit -m "Bootstrap public untrusted development signing key (unsafe by design)"
+            git push origin "HEAD:$GITHUB_REF_NAME"
           fi
-          echo "::add-mask::$STORE_PASSWORD"
-          echo "::add-mask::$KEY_PASSWORD"
-          KEYSTORE_PATH="$RUNNER_TEMP/oalab-release.jks"
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          base64 --decode "$KEYSTORE_B64" > "$KEYSTORE_PATH"
           chmod 600 "$KEYSTORE_PATH"
-          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
-          ACTUAL_CERT="$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | grep -m1 'SHA256:' | sed -E 's/.*SHA256:[[:space:]]*//' | tr -d ':' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-          EXPECTED_CERT="$(printf '%s' "$CERT_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$PASSWORD" -alias "$ALIAS" >/dev/null
+          ACTUAL_CERT="$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "$PASSWORD" -alias "$ALIAS" |
+            grep -m1 'SHA256:' | sed -E 's/.*SHA256:[[:space:]]*//' |
+            tr -d ':' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          EXPECTED_CERT="$(tr -d ':[:space:]' < "$PIN" | tr '[:upper:]' '[:lower:]')"
           if [[ ! "$EXPECTED_CERT" =~ ^[0-9a-f]{64}$ || "$ACTUAL_CERT" != "$EXPECTED_CERT" ]]; then
-            echo "::error::Keystore certificate differs from pinned SHA-256. Publishing cancelled."
+            echo "::error::Public test signing certificate changed. Never silently rotate signing keys."
             exit 1
           fi
           echo "OALAB_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-          echo "OALAB_KEYSTORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "OALAB_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "OALAB_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "OALAB_KEYSTORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+          echo "OALAB_KEY_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+          echo "OALAB_KEY_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
           echo "OALAB_CERT_SHA256=$EXPECTED_CERT" >> "$GITHUB_ENV"
           echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "### WARNING: PUBLIC UNTRUSTED DEVELOPMENT SIGNING" >> "$GITHUB_STEP_SUMMARY"
+          echo "This build uses a PUBLIC private key. Anyone can forge an OAlab update." >> "$GITHUB_STEP_SUMMARY"
       - name: Run unit tests and compile
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
       - name: Build signed release APK
@@ -111,7 +131,7 @@ jobs:
             exit 1
           fi
           cp "$APK_PATH" "OAlab-v$VERSION.apk"
-          printf '\n* Постоянная подпись APK, SHA-256: %s.\n' "$OALAB_CERT_SHA256" >> lupd.txt
+          printf '\n* ВНИМАНИЕ: приложение подписано ПУБЛИЧНЫМ НЕБЕЗОПАСНЫМ ключом SHA-256 %s. Любой может подделать обновление.\n' "$OALAB_CERT_SHA256" >> lupd.txt
           gh release create "$TAG" "OAlab-v$VERSION.apk" "lupd.txt#lupd.txt" --title "OAlab $VERSION" --notes-file "lupd.txt" --prerelease
 
       - name: Prepare public APK-only update channel
@@ -143,6 +163,6 @@ jobs:
       - name: Remove signing keystore from runner
         if: always()
         run: |
-          if [[ -f "$RUNNER_TEMP/oalab-release.jks" ]]; then
+          if [[ -f "$RUNNER_TEMP/oalab-public-dev.p12" ]]; then
             rm -f "$RUNNER_TEMP/oalab-release.jks"
           fi

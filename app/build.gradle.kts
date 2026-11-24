@@ -4,7 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Never commit the private keystore. Configure GitHub Actions secrets for signing.
+// WARNING: Public test signing key committed at owner's request. NOT SECURE.
+// Do not distribute to others or handle sensitive data with this signing identity.
 val signingStore = System.getenv("OALAB_KEYSTORE_PATH")
 val signingPassword = System.getenv("OALAB_KEYSTORE_PASSWORD")
 val signingAlias = System.getenv("OALAB_KEY_ALIAS")
@@ -31,6 +32,7 @@ android {
                 storePassword = signingPassword
                 keyAlias = signingAlias
                 keyPassword = signingKeyPassword
+                storeType = "PKCS12"
             }
         }
     }

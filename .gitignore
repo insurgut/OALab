@@ -13,4 +13,5 @@ captures/
 *.pfx
 .env
 .env.*
-signing/
+signing/*.p12
+signing/*.jks
