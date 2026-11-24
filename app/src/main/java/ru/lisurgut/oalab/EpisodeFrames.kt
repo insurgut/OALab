@@ -202,17 +202,28 @@ object EpisodeFrames {
                     retriever.setDataSource(stream.url, mapOf("User-Agent" to "OAlab/0.5"))
                     true
                 } catch (_: Exception) { false }
-                val segments = if (!direct) try { hlsSegments(stream.url) }
-                    catch (_: Exception) { null } else null
+                var segments: List<Pair<Long, String>>? = null
+                var checkedSegments = false
 
                 for (i in missing) {
                     if (!currentCoroutineContext().isActive) break
                     val target = EpisodeTimeline.frameTimes(duration)[i]
-                    val screenshot = try {
-                        if (direct) frame(retriever, target)
-                        else if (segments != null) segmentFrame(context, segments, target)
-                        else null
-                    } catch (_: Exception) { null }
+                    var screenshot = if (direct) try {
+                        frame(retriever, target)
+                    } catch (_: Exception) { null } else null
+                    // Some devices accept an HLS URL but cannot decode frames from it.
+                    // In that case try a bounded MPEG-TS segment extraction instead.
+                    if (screenshot == null) {
+                        if (!checkedSegments) {
+                            checkedSegments = true
+                            segments = try { hlsSegments(stream.url) }
+                                catch (_: Exception) { null }
+                        }
+                        val list = segments
+                        if (list != null) screenshot = try {
+                            segmentFrame(context, list, target)
+                        } catch (_: Exception) { null }
+                    }
                     if (screenshot != null) {
                         save(file(context, stream.url, i), screenshot)
                         onFrame(i, screenshot)
