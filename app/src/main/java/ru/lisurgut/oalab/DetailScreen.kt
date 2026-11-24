@@ -1,5 +1,10 @@
 package ru.lisurgut.oalab
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -35,6 +40,7 @@ fun DetailScreen(
     var problem by remember(anime.id) { mutableStateOf<String?>(null) }
     var expanded by remember(anime.id) { mutableStateOf(false) }
     var statuses by remember { mutableStateOf(false) }
+    var modeOptions by remember { mutableStateOf(false) }
     var episode by remember(anime.id) {
         mutableIntStateOf(library.entry(anime)?.lastEpisode ?: 1)
     }
@@ -126,18 +132,12 @@ fun DetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(
-                        onClick = { onWatch(episode, null) },
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Rounded.PlayArrow, null)
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (library.mergeEpisodes) "Непрерывный просмотр" else "Смотреть",
-                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    WatchModeButton(
+                        continuous = library.mergeEpisodes,
+                        onPlay = { onWatch(episode, null) },
+                        onLongPress = { modeOptions = !modeOptions },
+                        modifier = Modifier.weight(1f).height(44.dp)
+                    )
                     FilledTonalIconButton(
                         onClick = { library.toggleFavorite(anime) },
                         modifier = Modifier.size(44.dp),
@@ -172,6 +172,21 @@ fun DetailScreen(
                             }
                         }
                     }
+                }
+                AnimatedVisibility(
+                    visible = modeOptions,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    PlaybackModeStrip(
+                        continuous = library.mergeEpisodes,
+                        onChoose = { selected ->
+                            library.updateMergeEpisodes(selected)
+                            modeOptions = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 3.dp)
+                    )
                 }
             }
         }
