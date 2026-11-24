@@ -5,6 +5,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
+import android.app.Activity
+import android.app.PictureInPictureParams
+import android.util.Rational
+import android.os.Build
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.media3.session.MediaSession
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -52,6 +63,7 @@ fun PlayerScreen(
     library: LocalLibrary,
     onBack: () -> Unit,
     onFullscreen: (Boolean) -> Unit,
+    pipMode: Boolean = false,
     onSelect: (StreamVariant) -> Unit
 ) {
     val context = LocalContext.current
@@ -59,6 +71,9 @@ fun PlayerScreen(
         ExoPlayer.Builder(context).build().apply {
             preloadConfiguration = ExoPlayer.PreloadConfiguration(5_000_000L)
         }
+    }
+    val mediaSession = remember(player) {
+        MediaSession.Builder(context, player).build()
     }
     val now by rememberUpdatedState(request)
     val selectedCallback by rememberUpdatedState(onSelect)
@@ -80,6 +95,13 @@ fun PlayerScreen(
     var time by remember { mutableLongStateOf(0L) }
     var length by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
+    var controlsLocked by remember { mutableStateOf(false) }
+    var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
+    var scrubbing by remember { mutableStateOf(false) }
+    var lastGestureSeek by remember { mutableLongStateOf(0L) }
+    var gestureHint by remember { mutableStateOf("") }
+    var buffering by remember { mutableStateOf(false) }
+    var bufferAheadMs by remember { mutableLongStateOf(0L) }
     var controls by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var suppressedNext by remember { mutableStateOf(false) }
@@ -121,6 +143,26 @@ fun PlayerScreen(
                 suppressedNext = false
                 tried.clear()
             }
+            override fun onIsLoadingChanged(isLoading: Boolean) {
+                buffering = isLoading && !player.isPlaying
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                buffering = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_ENDED) {
+                    val completed = latestQueue.getOrNull(
+                        player.currentMediaItemIndex.coerceAtLeast(0)
+                    )
+                    if (completed != null) library.markEpisodeFinished(
+                        now.anime, completed.episode, completed.details?.durationMs ?: 0L
+                    )
+                }
+                if (state == Player.STATE_ENDED && !library.mergeEpisodes && library.autoplay) {
+                    val next = library.variantsFor(now.anime)
+                        .filter { it.episode == now.episode + 1 }
+                        .maxByOrNull { it.popularity }
+                    if (next != null) selectedCallback(next)
+                }
+            }
             override fun onPlayerError(cause: PlaybackException) {
                 val current = latestQueue.getOrNull(player.currentMediaItemIndex)
                     ?: now.stream
@@ -139,22 +181,6 @@ fun PlayerScreen(
                     controls = true
                 }
             }
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED) {
-                    val completed = latestQueue.getOrNull(
-                        player.currentMediaItemIndex.coerceAtLeast(0)
-                    )
-                    if (completed != null) library.markEpisodeFinished(
-                        now.anime, completed.episode, completed.details?.durationMs ?: 0L
-                    )
-                }
-                if (state == Player.STATE_ENDED && !library.mergeEpisodes && library.autoplay) {
-                    val next = library.variantsFor(now.anime)
-                        .filter { it.episode == now.episode + 1 }
-                        .maxByOrNull { it.popularity }
-                    if (next != null) selectedCallback(next)
-                }
-            }
         }
         player.addListener(listener)
         onDispose {
@@ -166,6 +192,7 @@ fun PlayerScreen(
                 library.globalEpisodePosition(now.anime, stream.episode, segmentPosition)
             )
             player.removeListener(listener)
+            mediaSession.release()
             player.release()
             onFullscreen(false)
         }
@@ -210,6 +237,7 @@ fun PlayerScreen(
             val position = player.currentPosition.coerceAtLeast(0L)
             time = position
             length = player.duration.takeIf { it > 0L } ?: 0L
+            bufferAheadMs = player.totalBufferedDuration.coerceAtLeast(0L)
             if (length > 0L) recordedDurations[episode] = length
 
             val window = active.details
@@ -276,6 +304,23 @@ fun PlayerScreen(
     val skipText = if (skip === activeOpening) "Пропустить опенинг"
         else "Пропустить эндинг"
 
+    val seekGesture: (Long) -> Unit = { delta ->
+        seek(displayedPosition + delta)
+        lastGestureSeek = delta
+        gestureHint = if (delta > 0) "+" + delta / 1000L + "с"
+        else delta.div(1000L).toString() + "с"
+    }
+    val gestureLayer = PlayerGestureLayer(
+        playerKey = request.anime.id,
+        seekSeconds = library.seekSeconds,
+        onTap = { if (!controlsLocked) controls = !controls },
+        onSeek = seekGesture,
+        onHold = { held ->
+            player.setPlaybackSpeed(if (held) 2f else 1f)
+        },
+        enabled = !controlsLocked && !pipMode
+    )
+
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         AndroidView(
             factory = { ctx ->
@@ -289,9 +334,9 @@ fun PlayerScreen(
             update = { it.player = player },
             modifier = Modifier.fillMaxSize()
         )
-        Box(Modifier.fillMaxSize().clickable { controls = !controls })
+        if (!pipMode) Box(gestureLayer)
 
-        if (controls) {
+        if (controls && !pipMode) {
             Box(Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
                     0f to Color.Black.copy(alpha = .7f),
@@ -321,9 +366,41 @@ fun PlayerScreen(
                     "Серия " + episode + if (merged) " · вместе" else "",
                     color = Color.White.copy(alpha = .8f), fontSize = 10.sp
                 )
+                IconButton(
+                    onClick = {
+                        controlsLocked = !controlsLocked
+                        controls = true
+                    },
+                    modifier = Modifier.size(31.dp)
+                ) {
+                    Icon(
+                        if (controlsLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                        if (controlsLocked) "Разблокировать" else "Заблокировать",
+                        tint = Color.White, modifier = Modifier.size(18.dp)
+                    )
+                }
+                if (Build.VERSION.SDK_INT >= 26) {
+                    IconButton(
+                        onClick = {
+                            val activity = context as? Activity
+                            if (activity != null) {
+                                try {
+                                    activity.enterPictureInPictureMode(
+                                        PictureInPictureParams.Builder()
+                                            .setAspectRatio(Rational(16, 9)).build()
+                                    )
+                                } catch (_: Exception) { }
+                            }
+                        },
+                        modifier = Modifier.size(31.dp)
+                    ) {
+                        Icon(Icons.Rounded.PictureInPictureAlt, "Картинка в картинке",
+                            tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
             }
 
-            Row(
+            if (!controlsLocked) Row(
                 Modifier.align(Alignment.Center)
                     .clip(RoundedCornerShape(14.dp))
                     .border(1.dp, Color.White.copy(alpha = .2f), RoundedCornerShape(14.dp))
@@ -366,7 +443,7 @@ fun PlayerScreen(
                         fontSize = 12.sp)
                 }
             }
-            Column(
+            if (!controlsLocked) Column(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 5.dp)
             ) {
@@ -412,7 +489,7 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = skip != null && error == null,
+            visible = skip != null && error == null && !pipMode && !controlsLocked,
             enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomEnd)
                 .padding(end = 20.dp, bottom = 76.dp)
@@ -438,7 +515,7 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = revealNext && error == null,
+            visible = revealNext && error == null && !pipMode && !controlsLocked,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 3 }),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopEnd)
@@ -498,7 +575,7 @@ fun PlayerScreen(
             }
         }
 
-        if (error != null) {
+        if (error != null && !pipMode) {
             Column(
                 Modifier.align(Alignment.Center).padding(20.dp)
                     .clip(RoundedCornerShape(17.dp))

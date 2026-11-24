@@ -1,6 +1,10 @@
 package ru.lisurgut.oalab
 
 import android.content.pm.ActivityInfo
+import android.os.Build
+import android.app.PictureInPictureParams
+import android.util.Rational
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.View
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -24,6 +28,41 @@ import androidx.lifecycle.repeatOnLifecycle
 data class PlaybackRequest(val anime: Anime, val episode: Int, val stream: StreamVariant)
 
 class MainActivity : ComponentActivity() {
+    private var pipMode by mutableStateOf(false)
+    private var playerOpen = false
+
+    private fun configurePip(enabled: Boolean) {
+        playerOpen = enabled
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setPictureInPictureParams(
+                PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .setAutoEnterEnabled(enabled)
+                    .build()
+            )
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT in 26..30 && playerOpen && !isInPictureInPictureMode) {
+            try {
+                enterPictureInPictureMode(
+                    PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(16, 9)).build()
+                )
+            } catch (_: Exception) { }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(active: Boolean, config: Configuration) {
+        super.onPictureInPictureModeChanged(active, config)
+        pipMode = active
+        requestedOrientation = if (active) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        else if (playerOpen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -48,11 +87,15 @@ class MainActivity : ComponentActivity() {
                 }
                 OALabApp(
                     library = library,
+                    pipMode = pipMode,
                     fullscreen = { enabled ->
                         immersivePlayer = enabled
-                        requestedOrientation = if (enabled)
-                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                        else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        configurePip(enabled)
+                        if (!pipMode) {
+                            requestedOrientation = if (enabled)
+                                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        }
                     }
                 )
             }
@@ -61,7 +104,11 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
+private fun OALabApp(
+    library: LocalLibrary,
+    fullscreen: (Boolean) -> Unit,
+    pipMode: Boolean
+) {
     var tab by remember { mutableIntStateOf(0) }
     var category by remember { mutableStateOf("Все") }
     var sorting by remember { mutableStateOf("Популярные") }
@@ -153,6 +200,7 @@ private fun OALabApp(library: LocalLibrary, fullscreen: (Boolean) -> Unit) {
                     playback = null
                 },
                 onFullscreen = fullscreen,
+                pipMode = pipMode,
                 onSelect = { stream -> playback = active.copy(episode = stream.episode, stream = stream) }
             )
         }
