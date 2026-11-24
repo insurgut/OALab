@@ -12,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -194,61 +196,78 @@ fun BottomPill(
         Triple("Главная", Icons.Rounded.Home, 0),
         Triple("Каталог", Icons.Rounded.Search, 1),
         Triple("Моё", Icons.Rounded.Bookmarks, 2),
-        Triple("Для тебя", Icons.Rounded.AutoAwesome, 3),
-        Triple("Настройки", Icons.Rounded.Settings, 4)
-    )
-    // Keep five tabs usable on small phones and with an update action visible.
-    val compact = LocalConfiguration.current.screenWidthDp < 450 || updateAvailable
+        Trip    val compact = LocalConfiguration.current.screenWidthDp < 390
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
-            Modifier.shadow(12.dp, CircleShape)
-                .clip(CircleShape).border(1.dp, Edge, CircleShape)
-                .background(PanelAlt).padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically
+            Modifier
+                .shadow(10.dp, CircleShape)
+                .clip(CircleShape)
+                .border(1.dp, Edge.copy(alpha = .65f), CircleShape)
+                .background(PanelAlt)
+                .horizontalScroll(rememberScrollState())
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
             tabs.forEach { (name, icon, index) ->
                 val active = selected == index
                 val background by animateColorAsState(
-                    if (active) MaterialTheme.colorScheme.primary else PanelAlt, label = "Dock selection"
+                    if (active) MaterialTheme.colorScheme.primaryContainer
+                    else Color.Transparent,
+                    label = "Selected navigation capsule"
                 )
                 Row(
-                    Modifier.clip(CircleShape).background(background)
+                    Modifier
+                        .clip(CircleShape)
+                        .background(background)
                         .clickable { onSelect(index) }
-                        .height(44.dp).widthIn(min = 44.dp)
+                        .height(44.dp)
+                        .widthIn(min = 41.dp)
                         .padding(horizontal = if (active) 11.dp else 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(icon, if (active) null else name,
-                        tint = if (active) MaterialTheme.colorScheme.onPrimary else Muted,
-                        modifier = Modifier.size(20.dp))
-                    AnimatedVisibility(active && !compact) {
-                        Text(name, color = MaterialTheme.colorScheme.onPrimary,
+                    Icon(
+                        icon, name,
+                        tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else Muted,
+                        modifier = Modifier.size(19.dp)
+                    )
+                    // The selected tab ALWAYS shows its name, even on narrow phones
+                    // and when the update chip is visible.
+                    AnimatedVisibility(visible = active) {
+                        Text(
+                            name,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(start = 6.dp),
-                            fontSize = 11.sp, maxLines = 1,
-                            fontWeight = FontWeight.SemiBold)
+                            fontSize = if (compact) 10.sp else 11.sp,
+                            maxLines = 1,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
-            AnimatedVisibility(updateAvailable) {
-                Row(
-                    Modifier.clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
+            AnimatedVisibility(visible = updateAvailable) {
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
                         .clickable(onClick = onOpenUpdate)
-                        .height(44.dp).padding(horizontal = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .size(42.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.SystemUpdate, "Новое обновление",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(19.dp))
-                    if (!compact) {
-                        Spacer(Modifier.width(5.dp))
-                        Text("Обновить", color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(
+                        Icons.Rounded.SystemUpdate, "Доступно обновление",
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            }
+        }
+    }sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
