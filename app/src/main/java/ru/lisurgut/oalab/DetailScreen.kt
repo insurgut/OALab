@@ -6,6 +6,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +39,7 @@ fun DetailScreen(
         mutableIntStateOf(library.entry(anime)?.lastEpisode ?: 1)
     }
     var refresh by remember { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(anime.id, refresh) {
         loading = true
@@ -60,6 +62,7 @@ fun DetailScreen(
 
     LazyColumn(
         Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        state = listState,
         contentPadding = PaddingValues(bottom = 35.dp)
     ) {
         item {
@@ -185,7 +188,14 @@ fun DetailScreen(
             }
         }
         if (episodes.isNotEmpty()) {
-            items(episodes, key = { it }) { number ->
+            items(episodes, key = { "episode-" + it }) { number ->
+                val isVisible by remember(number) {
+                    derivedStateOf {
+                        listState.layoutInfo.visibleItemsInfo.any {
+                            it.key == "episode-" + number
+                        }
+                    }
+                }
                 val options = variants[number].orEmpty()
                 val preview = options.minByOrNull { it.popularity }
                 val detailsForEpisode = options.firstOrNull()?.details
@@ -195,6 +205,7 @@ fun DetailScreen(
                         details = detailsForEpisode,
                         stream = preview,
                         selected = number == episode,
+                        active = isVisible,
                         onPlay = {
                             episode = number
                             onWatch(number, null)
@@ -267,6 +278,7 @@ private fun EpisodeCard(
     details: EpisodeDetails?,
     stream: StreamVariant,
     selected: Boolean,
+    active: Boolean,
     onPlay: () -> Unit
 ) {
     val accent = MaterialTheme.colorScheme.primary
@@ -287,7 +299,8 @@ private fun EpisodeCard(
         }
         AnimatedEpisodePreview(
             stream,
-            Modifier.width(137.dp).height(76.dp)
+            Modifier.width(137.dp).height(76.dp),
+            active = active
         )
         Column(Modifier.weight(1f)) {
             Text(

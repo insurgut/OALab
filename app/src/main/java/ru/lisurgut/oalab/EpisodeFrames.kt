@@ -226,20 +226,23 @@ object EpisodeFrames {
 }
 
 @Composable
-fun AnimatedEpisodePreview(stream: StreamVariant, modifier: Modifier = Modifier) {
+fun AnimatedEpisodePreview(
+    stream: StreamVariant, modifier: Modifier = Modifier, active: Boolean = true
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val frames = remember(stream.url) {
         mutableStateListOf<Bitmap?>().apply { repeat(10) { add(null) } }
     }
     var selected by remember(stream.url) { mutableIntStateOf(0) }
-    LaunchedEffect(stream.url) {
+    LaunchedEffect(stream.url, active) {
+        if (!active) return@LaunchedEffect
         EpisodeFrames.load(context.applicationContext, stream) { index, bitmap ->
             withContext(Dispatchers.Main) { frames[index] = bitmap }
         }
     }
     val available = frames.indices.filter { frames[it] != null }
-    LaunchedEffect(available) {
-        while (available.size > 1) {
+    LaunchedEffect(available, active) {
+        while (active && available.size > 1) {
             delay(2_500)
             selected = (selected + 1) % available.size
         }

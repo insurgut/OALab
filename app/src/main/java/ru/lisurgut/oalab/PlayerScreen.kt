@@ -83,7 +83,6 @@ fun PlayerScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var suppressedNext by remember { mutableStateOf(false) }
     val tried = remember { mutableStateListOf<String>() }
-    var lastEpisode by remember { mutableIntStateOf(-1) }
 
     val active = queue.getOrNull(currentIndex) ?: request.stream
     val episode = active.episode
@@ -100,9 +99,6 @@ fun PlayerScreen(
     val displayedPosition = if (merged) totalPosition else time
 
     val latestQueue by rememberUpdatedState(queue)
-    val latestDurations by rememberUpdatedState(durations)
-    val latestTotal by rememberUpdatedState(completeDuration)
-    val latestIndex by rememberUpdatedState(currentIndex)
 
     DisposableEffect(player) {
         onFullscreen(true)
@@ -188,7 +184,6 @@ fun PlayerScreen(
 
     LaunchedEffect(request.anime.id, episode) {
         suppressedNext = false
-        lastEpisode = episode
     }
 
     LaunchedEffect(player, episode) {
@@ -230,10 +225,6 @@ fun PlayerScreen(
             delay(4_000)
             controls = false
         }
-    }
-
-    funSeek@ run {
-        // Local helper is a value, so slider and skip controls share mapping.
     }
 
     val seek: (Long) -> Unit = { target ->
