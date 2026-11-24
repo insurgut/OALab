@@ -1,9 +1,6 @@
 package ru.lisurgut.oalab
 
-import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -22,12 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** Single source detail: real AniLibria episodes, no dubbing/provider selection. */
 @Composable
 fun DetailScreen(
     anime: Anime,
@@ -35,382 +32,239 @@ fun DetailScreen(
     onBack: () -> Unit,
     onWatch: (Int, String?) -> Unit
 ) {
-    val context = LocalContext.current
-    var loadingEpisodes by remember(anime.id) { mutableStateOf(true) }
-    var episodesError by remember(anime.id) { mutableStateOf<String?>(null) }
-    LaunchedEffect(anime.id) {
-        loadingEpisodes = true
-        episodesError = null
-        try {
-            val resolved = AniLibertyApi.resolve(anime)
-            if (resolved.isNotEmpty()) library.saveResolvedStreams(anime, resolved)
-        } catch (error: Exception) {
-            episodesError = error.localizedMessage
-        } finally {
-            loadingEpisodes = false
-        }
-    }
-    val variants = library.variantsFor(anime)
-    val releasedEpisodes = variants.map { it.episode }.distinct().sorted()
-    val availableEps = if (anime.id.startsWith("aniliberty:") && releasedEpisodes.isNotEmpty()) {
-        releasedEpisodes
-    } else {
-        (releasedEpisodes + (1..anime.episodes.coerceIn(1, 600)).toList()).distinct().sorted()
-    }
+    var loading by remember(anime.id) { mutableStateOf(true) }
+    var failure by remember(anime.id) { mutableStateOf<String?>(null) }
+    var expanded by remember(anime.id) { mutableStateOf(false) }
+    var showStatuses by remember { mutableStateOf(false) }
     var episode by remember(anime.id) {
-        mutableIntStateOf(
-            library.entry(anime)?.lastEpisode?.takeIf { it in availableEps }
-                ?: availableEps.firstOrNull() ?: 1
-        )
+        mutableIntStateOf(library.entry(anime)?.lastEpisode ?: 1)
     }
-    LaunchedEffect(availableEps) {
-        if (availableEps.isNotEmpty() && episode !in availableEps) {
-            episode = availableEps.first()
+    var refresh by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(anime.id, refresh) {
+        loading = true
+        failure = null
+        try {
+            library.saveResolvedStreams(anime, AniLibertyApi.resolve(anime))
+        } catch (e: Exception) {
+            failure = e.localizedMessage ?: "Видеосервис недоступен"
+        } finally {
+            loading = false
         }
     }
-    var chosenUrl by remember(anime.id) { mutableStateOf<String?>(null) }
-    var showVoices by remember { mutableStateOf(false) }
-    var descriptionExpanded by remember(anime.id) { mutableStateOf(false) }
-    var statusMenu by remember { mutableStateOf(false) }
-    val ranked = library.rankVariants(variants.filter { it.episode == episode }, library.voiceSort)
-    val chosen = ranked.firstOrNull { it.url == chosenUrl } ?: ranked.firstOrNull()
+    val episodes = library.variantsFor(anime).map { it.episode }.distinct().sorted()
+    LaunchedEffect(episodes) {
+        if (episodes.isNotEmpty() && episode !in episodes) {
+            episode = episodes.first()
+        }
+    }
     val status = library.status(anime)
 
     LazyColumn(
         Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 45.dp)
+        contentPadding = PaddingValues(bottom = 36.dp)
     ) {
         item {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).height(216.dp).clip(RoundedCornerShape(22.dp))) {
-                Cover(anime.banner.ifBlank { anime.cover }, Modifier.fillMaxSize())
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = .15f), Color.Black.copy(alpha = .35f), Color.Black.copy(alpha = .95f))
-                        )
-                    )
-                )
+            Box(
+                Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 7.dp)
+                    .height(213.dp).clip(RoundedCornerShape(22.dp))
+            ) {
+                Cover(anime.banner.ifBlank { anime.cover }, Modifier.fillMaxSize(), anime.title)
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = .24f),
+                    .50f to Color.Black.copy(alpha = .46f),
+                    1f to Color.Black.copy(alpha = .95f)
+                )))
                 IconButton(
                     onClick = onBack,
-                    modifier = Modifier.align(Alignment.TopStart).padding(start = 13.dp, top = 10.dp)
-                        .clip(CircleShape).background(Color.Black.copy(alpha = .5f))
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                        .background(Color.Black.copy(alpha = .55f), CircleShape)
                 ) {
                     Icon(Icons.Rounded.ArrowBack, "Назад", tint = Color.White)
                 }
                 Row(
-                    Modifier.align(Alignment.BottomStart).padding(horizontal = 16.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.Bottom
+                    Modifier.align(Alignment.BottomStart).padding(14.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(11.dp)
                 ) {
                     Cover(
-                        anime.cover, Modifier.width(85.dp).height(118.dp)
-                            .clip(RoundedCornerShape(17.dp))
-                            .border(1.dp, Edge, RoundedCornerShape(17.dp))
+                        anime.cover,
+                        Modifier.width(77.dp).height(105.dp).clip(RoundedCornerShape(12.dp)),
+                        anime.title
                     )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("OAlab / Аниме", color = Color.White.copy(alpha = .77f), fontSize = 10.sp)
-                        Spacer(Modifier.height(8.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            anime.title,
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            lineHeight = 23.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
+                            anime.title, color = Color.White,
+                            fontSize = 19.sp, lineHeight = 22.sp,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(Modifier.height(9.dp))
-                        Text(
-                            listOfNotNull(
-                                anime.year.takeIf { it > 0 }?.toString(),
-                                anime.format.takeIf { it.isNotBlank() }
-                            ).joinToString(" · "),
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = .78f)
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (anime.year > 0) {
+                                Box(Modifier.size(7.dp)
+                                    .background(yearTint(anime.year), CircleShape))
+                                Text(anime.year.toString(), color = Color.White, fontSize = 11.sp)
+                            }
+                            Text(
+                                anime.format.ifBlank { "Аниме" },
+                                color = Color.White.copy(alpha = .83f), fontSize = 11.sp
+                            )
+                        }
                     }
                 }
             }
         }
         item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                Spacer(Modifier.height(13.dp))
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (anime.score > 0)
                         MetricChip((anime.score / 10f).toString() + " / 10", Icons.Rounded.Star)
-                    if (anime.episodes > 0)
-                        MetricChip(anime.episodes.toString() + " сер.", Icons.Rounded.Movie)
-                    MetricChip(library.catalogProvider, Icons.Rounded.Public)
+                    MetricChip("AniLibria", Icons.Rounded.PlayCircle)
+                    if (episodes.isNotEmpty())
+                        MetricChip(episodes.size.toString() + " сер.", Icons.Rounded.Movie)
                 }
                 Spacer(Modifier.height(13.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Button(
-                        onClick = { onWatch(episode, chosen?.url) },
-                        shape = RoundedCornerShape(17.dp),
+                        onClick = { onWatch(episode, null) },
                         modifier = Modifier.weight(1f).height(44.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            disabledContainerColor = PanelAlt, disabledContentColor = Muted
-                        )
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Icon(Icons.Rounded.PlayArrow, null)
-                        Spacer(Modifier.width(7.dp))
-                        Text("Смотреть", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Смотреть", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Spacer(Modifier.width(9.dp))
-                    IconButton(
+                    FilledTonalIconButton(
                         onClick = { library.toggleFavorite(anime) },
-                        modifier = Modifier.size(43.dp).background(PanelAlt, RoundedCornerShape(17.dp))
+                        modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp)
                     ) {
                         Icon(
-                            if (library.isFavorite(anime)) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                            "Избранное",
-                            tint = Paper
+                            if (library.isFavorite(anime)) Icons.Rounded.Favorite
+                            else Icons.Rounded.FavoriteBorder,
+                            "Избранное", modifier = Modifier.size(20.dp)
                         )
                     }
-                    Spacer(Modifier.width(9.dp))
                     Box {
-                        IconButton(
-                            onClick = { statusMenu = true },
-                            modifier = Modifier.size(43.dp).background(PanelAlt, RoundedCornerShape(17.dp))
+                        FilledTonalIconButton(
+                            onClick = { showStatuses = true },
+                            modifier = Modifier.size(44.dp),
+                            shape = RoundedCornerShape(14.dp)
                         ) {
-                            Icon(Icons.Rounded.Checklist, "Статус", tint = Paper)
+                            Icon(Icons.Rounded.Checklist, "Статус", modifier = Modifier.size(20.dp))
                         }
                         DropdownMenu(
-                            expanded = statusMenu, onDismissRequest = { statusMenu = false },
-                            containerColor = PanelAlt
+                            expanded = showStatuses,
+                            onDismissRequest = { showStatuses = false }
                         ) {
-                            listOf("Не смотрел", "В планах", "Смотрю", "Просмотрено", "Брошено").forEach {
+                            listOf(
+                                "Не смотрел", "В планах", "Смотрю",
+                                "Просмотрено", "Брошено"
+                            ).forEach { option ->
                                 DropdownMenuItem(
-                                    text = { Text(it, fontSize = 13.sp) },
+                                    text = { Text(option) },
                                     leadingIcon = {
-                                        if (it == status) Icon(Icons.Rounded.Check, null)
+                                        if (option == status) Icon(Icons.Rounded.Check, null)
                                     },
-                                    onClick = { library.setStatus(anime, it); statusMenu = false }
+                                    onClick = {
+                                        library.setStatus(anime, option)
+                                        showStatuses = false
+                                    }
                                 )
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(9.dp))
-                Text("Статус: " + status, fontSize = 12.sp, color = Muted)
-            }
-        }
-        if (anime.description.isNotBlank()) item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionHeader("Описание")
-                Text(anime.description,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else 5,
-                    overflow = TextOverflow.Ellipsis, fontSize = 12.sp, lineHeight = 18.sp)
-                if (anime.description.length > 260) TextButton(
-                    onClick = { descriptionExpanded = !descriptionExpanded },
-                    contentPadding = PaddingValues(horizontal = 0.dp)
-                ) { Text(if (descriptionExpanded) "Свернуть" else "Читать полностью", fontSize = 12.sp) }
-            }
-        }
-        if (anime.genres.isNotEmpty()) item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionHeader("Жанры")
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    anime.genres.forEach { FlatChip(it) {} }
-                }
-            }
-        }
-        item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionHeader("Серии")
-            }
-        }
-        if (availableEps.isNotEmpty()) item {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(availableEps) { ep ->
-                    FlatChip("Серия " + ep, episode == ep) { episode = ep; chosenUrl = null }
-                }
-            }
-        }
-        item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionHeader("Озвучка")
-                if (chosen != null) {
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Panel)
-                            .clickable { showVoices = true }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(PanelAlt),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.GraphicEq, null, tint = Paper)
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(chosen.team, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Spacer(Modifier.height(5.dp))
-                            Text(
-                                chosen.source + " · " + chosen.language.uppercase() +
-                                    " · " + chosen.voices + " гол.",
-                                fontSize = 11.sp, color = Muted
-                            )
-                        }
-                        Icon(Icons.Rounded.UnfoldMore, "Выбрать", tint = Paper)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        ranked.size.toString() + " доступных вариантов для серии",
-                        color = Muted, fontSize = 11.sp
-                    )
-                } else {
-                    Column(
-                        Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(19.dp))
-                            .padding(18.dp)
-                    ) {
-                        Icon(Icons.Rounded.CloudOff, null, tint = Muted)
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            if (loadingEpisodes) "Загружаем серии…" else "Серии пока не найдены",
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(7.dp))
-                        Text(
-                            if (episodesError != null)
-                                "Видеокаталог временно недоступен: " + episodesError
-                            else "Нажми «Смотреть», чтобы повторить поиск доступных серий.",
-                            color = Muted, fontSize = 12.sp, lineHeight = 19.sp
-                        )
-                    }
-                }
-                if (chosen != null && DownloadSupport.canDownload(chosen)) {
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedButton(
-                        onClick = {
-                            try {
-                                DownloadSupport.enqueue(context,anime,chosen)
-                                Toast.makeText(context,"Начата загрузка MP4",Toast.LENGTH_SHORT).show()
-                            } catch(e:Exception) {
-                                Toast.makeText(context,e.localizedMessage ?: "Ошибка загрузки",Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),
-                        border=BorderStroke(1.dp,Edge)
-                    ) {
-                        Icon(Icons.Rounded.Download,null)
-                        Spacer(Modifier.width(7.dp))
-                        Text("Скачать видео для просмотра офлайн")
-                    }
-                }
-            }
-        }
-    }
-    if (showVoices && ranked.isNotEmpty()) {
-        VoiceSelectorSheet(
-            variants = ranked,
-            selected = chosen,
-            library = library,
-            onDismiss = { showVoices = false },
-            onSelect = { chosenUrl = it.url; showVoices = false }
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun VoiceSelectorSheet(
-    variants: List<StreamVariant>,
-    selected: StreamVariant?,
-    library: LocalLibrary,
-    onDismiss: () -> Unit,
-    onSelect: (StreamVariant) -> Unit
-) {
-    var order by remember { mutableStateOf(library.voiceSort) }
-    var lang by remember { mutableStateOf("Все") }
-    val filtered = library.rankVariants(
-        variants.filter { lang == "Все" || it.language.equals(lang, ignoreCase = true) },
-        order
-    )
-    val languages = listOf("Все") + variants.map { it.language }.distinct().sorted()
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Panel,
-        contentColor = Paper,
-        dragHandle = {
-            Box(Modifier.padding(top = 13.dp, bottom = 12.dp).size(34.dp, 4.dp)
-                .background(Muted, RoundedCornerShape(3.dp)))
-        }
-    ) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 30.dp)) {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                Eyebrow("Настройка воспроизведения")
                 Spacer(Modifier.height(5.dp))
-                Text("Выбери озвучку", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(7.dp))
-                Text("Популярность и голоса берутся из подключённого источника.", color = Muted, fontSize = 11.sp)
+                Text("Статус: " + status, fontSize = 11.sp, color = Muted)
             }
-            Spacer(Modifier.height(14.dp))
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                languages.forEach { code ->
-                    FlatChip(if (code == "Все") code else code.uppercase(), lang == code) { lang = code }
-                }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                SectionHeader("Серии", if (loading) "Загружаем с AniLibria"
+                    else if (episodes.isNotEmpty()) "Доступно: " + episodes.size else null)
             }
-            Spacer(Modifier.height(10.dp))
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf("Популярность", "Голоса", "Оценки", "Тайминги", "По алфавиту").forEach { option ->
-                    FlatChip(option, order == option) {
-                        order = option
-                        library.updateVoiceSort(option)
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 410.dp)) {
-                items(filtered, key = { it.url + it.episode }) { variant ->
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clickable { onSelect(variant) }
-                            .padding(horizontal = 21.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (selected?.url == variant.url) Icons.Rounded.RadioButtonChecked
-                            else Icons.Rounded.RadioButtonUnchecked,
-                            null,
-                            tint = if (selected?.url == variant.url) Paper else Muted,
-                            modifier = Modifier.size(23.dp)
-                        )
-                        Spacer(Modifier.width(13.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(variant.team, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                variant.source + " · " + variant.language.uppercase() +
-                                    " · " + variant.voices + " голоса",
-                                color = Muted, fontSize = 11.sp
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Популярность " + variant.popularity +
-                                    " · оценок " + variant.votes + " · " + variant.timing,
-                                color = Muted, fontSize = 10.sp
-                            )
+        }
+        if (episodes.isNotEmpty()) {
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    items(episodes) { number ->
+                        FlatChip("Серия " + number, selected = number == episode) {
+                            episode = number
                         }
-                        Icon(Icons.Rounded.PlayArrow, null, tint = Muted)
                     }
-                    HorizontalDivider(color = Edge, thickness = .5.dp)
+                }
+            }
+        } else {
+            item {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        .background(Panel, RoundedCornerShape(16.dp))
+                        .padding(15.dp)
+                ) {
+                    if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(
+                        if (loading) "Получаем доступные эпизоды…"
+                        else "Серии AniLibria пока не найдены",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (!loading) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            failure ?: "Возможно, релиз ещё не опубликован.",
+                            color = Muted, fontSize = 11.sp
+                        )
+                        TextButton(onClick = { refresh++ }) { Text("Обновить") }
+                    }
+                }
+            }
+        }
+        if (anime.description.isNotBlank()) {
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    SectionHeader("Описание")
+                    Text(
+                        anime.description, color = Muted,
+                        fontSize = 12.sp, lineHeight = 18.sp,
+                        maxLines = if (expanded) Int.MAX_VALUE else 5,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (anime.description.length > 240) {
+                        TextButton(onClick = { expanded = !expanded }) {
+                            Text(if (expanded) "Свернуть" else "Читать полностью",
+                                fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+        if (anime.genres.isNotEmpty()) {
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    SectionHeader("Жанры")
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        anime.genres.forEach { genre ->
+                            Box(
+                                Modifier.background(Panel, RoundedCornerShape(11.dp))
+                                    .padding(horizontal = 11.dp, vertical = 8.dp)
+                            ) {
+                                Text(genre, color = Paper, fontSize = 11.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
