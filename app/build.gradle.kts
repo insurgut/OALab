@@ -22,8 +22,8 @@ android {
         applicationId = "ru.lisurgut.oalab"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "0.7.3"
+        versionCode = 21
+        versionName = "0.7.4"
     }
     if (stableSigningEnabled) {
         signingConfigs {
