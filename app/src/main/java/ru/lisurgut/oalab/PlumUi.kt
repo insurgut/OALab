@@ -298,81 +298,301 @@ fun PlumHomeScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PlumCatalogScreen(
-    catalog:List<Anime>,library:LocalLibrary,
-    search:String,onSearch:(String)->Unit,category:String,onCategory:(String)->Unit,
-    sort:String,onSort:(String)->Unit,
-    fromYear:Int?,toYear:Int?,onYears:(Int?,Int?)->Unit,
-    loading:Boolean,error:String?,onOpen:(Anime)->Unit,onPlay:(Anime)->Unit,
-    onMore:()->Unit,onRetry:()->Unit
+    catalog: List<Anime>, library: LocalLibrary,
+    search: String, onSearch: (String)->Unit,
+    category: String, onCategory: (String)->Unit,
+    sort: String, onSort: (String)->Unit,
+    fromYear: Int?, toYear: Int?, onYears: (Int?,Int?)->Unit,
+    loading: Boolean, error: String?,
+    onOpen: (Anime)->Unit, onPlay: (Anime)->Unit,
+    onMore: ()->Unit, onRetry: ()->Unit
 ) {
-    var filters by remember {mutableStateOf(false)}
-    val visible = if(fromYear==null && toYear==null)catalog else
-        catalog.filter{it.year in (fromYear?:1950)..(toYear?:2027)}
-    LazyColumn(Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
-        contentPadding=PaddingValues(start=16.dp,end=16.dp,bottom=110.dp)) {
-        item {
-            Text("Каталог",color=MaterialTheme.colorScheme.onBackground,
-                fontSize=30.sp,fontWeight=FontWeight.Medium,
-                modifier=Modifier.padding(top=12.dp,bottom=12.dp))
-            OutlinedTextField(value=search,onValueChange=onSearch,
-                modifier=Modifier.fillMaxWidth(),singleLine=true,shape=CircleShape,
-                placeholder={Text("Найти аниме",color=Muted)},
-                leadingIcon={Icon(Icons.Rounded.Search,null)},
-                trailingIcon=if(search.isNotEmpty()){{IconButton(onClick={onSearch("")}){
-                    Icon(Icons.Rounded.Close,"Очистить")}}}else null,
-                colors=OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor=Panel,unfocusedContainerColor=Panel,
-                    focusedTextColor=MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor=MaterialTheme.colorScheme.onSurface,
-                    cursorColor=MaterialTheme.colorScheme.primary,
-                    focusedBorderColor=MaterialTheme.colorScheme.primary,unfocusedBorderColor=Edge))
-            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={filters=!filters}){
-                    Icon(Icons.Rounded.Tune,null,Modifier.size(18.dp))
+    var showFilters by remember { mutableStateOf(false) }
+    var showRange by remember { mutableStateOf(false) }
+    var draftSort by remember(showFilters) { mutableStateOf(sort) }
+    var draftCategory by remember(showFilters) { mutableStateOf(category) }
+    var draftFrom by remember(showFilters) { mutableStateOf(fromYear) }
+    var draftTo by remember(showFilters) { mutableStateOf(toYear) }
+    val activeFilters = listOf(
+        category.takeIf { it != "Все" },
+        sort.takeIf { it != "Популярные" },
+        (fromYear ?: toYear)?.let { "Годы" }
+    ).count { it != null }
+    val visible = if (fromYear == null && toYear == null) catalog
+        else catalog.filter { it.year in (fromYear ?: 1950)..(toYear ?: 2027) }
+    val clear: () -> Unit = {
+        onCategory("Все")
+        onSort("Популярные")
+        onYears(null, null)
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        contentPadding = PaddingValues(
+            start = 16.dp, end = 16.dp, top = 13.dp, bottom = 115.dp
+        )
+    ) {
+        item(key = "catalog-heading") {
+            Text(
+                "Каталог", color = Paper, fontSize = 27.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-.8).sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            OutlinedTextField(
+                value = search,
+                onValueChange = onSearch,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(15.dp),
+                placeholder = { Text("Поиск аниме", color = Muted) },
+                leadingIcon = {
+                    Icon(Icons.Rounded.Search, null, Modifier.size(21.dp))
+                },
+                trailingIcon = if (search.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { onSearch("") }) {
+                            Icon(Icons.Rounded.Close, "Очистить поиск")
+                        }
+                    }
+                } else null,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Panel,
+                    unfocusedContainerColor = Panel,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = Edge.copy(alpha = .55f)
+                )
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    Modifier.clip(CircleShape)
+                        .background(Panel)
+                        .clickable { showFilters = true }
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.Tune, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
-                    Text(if(filters)"Скрыть фильтры" else "Фильтры")
+                    Text(
+                        "Фильтры" +
+                            if (activeFilters > 0) " · " + activeFilters else "",
+                        fontSize = 12.sp, color = Paper,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                if (activeFilters > 0) {
+                    TextButton(onClick = clear) {
+                        Text("Сбросить", fontSize = 11.sp)
+                    }
                 }
                 Spacer(Modifier.weight(1f))
-                Text(catalog.size.toString()+" аниме",fontSize=12.sp,color=Muted)
+                Text(
+                    visible.size.toString() + " аниме",
+                    fontSize = 11.sp, color = Muted
+                )
             }
-            if(filters){
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(19.dp))
-                    .background(Panel)) {
-                    YearSpectrumPicker(fromYear,toYear,onYears)
-                    HorizontalDivider(color=Edge)
-                    Row(Modifier.horizontalScroll(rememberScrollState())
-                        .padding(horizontal=13.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                        AnimeApi.sorting.forEach{FlatChip(it,it==sort){onSort(it)}}
-                    }
-                    Row(Modifier.horizontalScroll(rememberScrollState())
-                        .padding(horizontal=13.dp,vertical=8.dp),
-                        horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                        AnimeApi.categories.forEach{FlatChip(it,it==category){onCategory(it)}}
-                    }
-                }
-            } else {
-                Row(Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                    FlatChip(sort,true){filters=true}
-                    FlatChip(category,true){filters=true}
-                    FlatChip(if(fromYear==null)"Все годы" else fromYear.toString()+" — "+(toYear?:2027),
-                        fromYear!=null){filters=true}
+            if (activeFilters > 0) {
+                Text(
+                    listOfNotNull(
+                        category.takeIf { it != "Все" },
+                        sort.takeIf { it != "Популярные" },
+                        (fromYear ?: toYear)?.let {
+                            (fromYear ?: 1950).toString() +
+                                "–" + (toYear ?: 2027).toString()
+                        }
+                    ).joinToString(" · "),
+                    color = Muted, fontSize = 10.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        if (error != null) item(key = "catalog-error") {
+            ErrorPanel(error, onRetry)
+        }
+        items(visible, key = { it.id }) { anime ->
+            PlumAnimeLine(
+                anime, library,
+                onOpen = { onOpen(anime) },
+                onPlay = { onPlay(anime) }
+            )
+        }
+        if (loading) item(key = "catalog-loading") {
+            Box(
+                Modifier.fillMaxWidth().padding(19.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(23.dp)
+                )
+            }
+        } else if (error == null && visible.isEmpty()) {
+            item(key = "catalog-empty") {
+                EmptyState(Icons.Rounded.SearchOff,
+                    "Ничего не нашлось", "Попробуй убрать часть фильтров")
+            }
+        } else if (visible.isNotEmpty()) {
+            item(key = "catalog-more") {
+                OutlinedButton(
+                    onClick = onMore,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                    shape = CircleShape
+                ) {
+                    Text("Показать ещё")
                 }
             }
         }
-        if(error!=null)item{ErrorPanel(error,onRetry)}
-        items(visible,key={it.id}){a->PlumAnimeLine(a,library,{onOpen(a)},{onPlay(a)})}
-        if(loading)item{
-            Box(Modifier.fillMaxWidth().padding(22.dp),contentAlignment=Alignment.Center){
-                CircularProgressIndicator(color=Paper,modifier=Modifier.size(23.dp))
+    }
+
+    if (showFilters) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilters = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 18.dp, end = 18.dp, bottom = 24.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Фильтры каталога",
+                        fontSize = 21.sp, fontWeight = FontWeight.SemiBold,
+                        color = Paper, modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = {
+                            draftCategory = "Все"
+                            draftSort = "Популярные"
+                            draftFrom = null
+                            draftTo = null
+                            showRange = false
+                        }
+                    ) {
+                        Text("Очистить", fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Сортировать", color = Paper,
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    AnimeApi.sorting.forEach { choice ->
+                        FilterChip(
+                            selected = draftSort == choice,
+                            onClick = { draftSort = choice },
+                            label = { Text(choice, fontSize = 11.sp) },
+                            shape = RoundedCornerShape(11.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(11.dp))
+                Text(
+                    "Жанр", color = Paper,
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    AnimeApi.categories.forEach { choice ->
+                        FilterChip(
+                            selected = draftCategory == choice,
+                            onClick = { draftCategory = choice },
+                            label = { Text(choice, fontSize = 11.sp) },
+                            shape = RoundedCornerShape(11.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(11.dp))
+                Text(
+                    "Год выпуска", color = Paper,
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    val quick = listOf(
+                        Triple("Любой", null, null),
+                        Triple("2025+", 2025, null),
+                        Triple("2020+", 2020, null),
+                        Triple("2010-е", 2010, 2019),
+                        Triple("До 2000", null, 1999)
+                    )
+                    quick.forEach { (title, earliest, latest) ->
+                        FilterChip(
+                            selected = draftFrom == earliest && draftTo == latest,
+                            onClick = {
+                                draftFrom = earliest
+                                draftTo = latest
+                                showRange = false
+                            },
+                            label = { Text(title, fontSize = 11.sp) },
+                            shape = RoundedCornerShape(11.dp)
+                        )
+                    }
+                    FilterChip(
+                        selected = showRange,
+                        onClick = { showRange = !showRange },
+                        label = { Text("Диапазон", fontSize = 11.sp) },
+                        shape = RoundedCornerShape(11.dp)
+                    )
+                }
+                if (showRange) {
+                    val first = (draftFrom ?: 1950).coerceIn(1950, 2027)
+                    val last = (draftTo ?: 2027).coerceIn(first, 2027)
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(first.toString(), color = Muted, fontSize = 12.sp)
+                        Text(last.toString(), color = Muted, fontSize = 12.sp)
+                    }
+                    RangeSlider(
+                        value = first.toFloat()..last.toFloat(),
+                        onValueChange = { range ->
+                            draftFrom = range.start.roundToInt()
+                            draftTo = range.endInclusive.roundToInt()
+                        },
+                        valueRange = 1950f..2027f
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        onCategory(draftCategory)
+                        onSort(draftSort)
+                        onYears(draftFrom, draftTo)
+                        showFilters = false
+                    },
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Применить фильтры") }
             }
-        }else if(error==null && visible.isEmpty())item{
-            EmptyState(Icons.Rounded.SearchOff,"Ничего не найдено","Измени условия поиска")
-        }else if(catalog.isNotEmpty())item{
-            OutlinedButton(onClick=onMore,modifier=Modifier.fillMaxWidth().padding(vertical=13.dp),
-                shape=CircleShape,border=BorderStroke(1.dp,Edge)){Text("Показать ещё")}
         }
     }
 }
