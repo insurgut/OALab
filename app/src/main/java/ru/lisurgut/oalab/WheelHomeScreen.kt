@@ -28,8 +28,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -118,7 +120,9 @@ fun WheelHomeScreen(
             ranked.filterIndexed { index, _ -> index % groupCount == group }
         }
     }
+    val haptics = LocalHapticFeedback.current
     val shuffle = {
+        haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
         shuffleDay = day
         savedRound = if (round == Int.MAX_VALUE) 0 else round + 1
     }
@@ -311,6 +315,7 @@ private fun RecommendationWheel(titles: List<Anime>, day: Long, round: Int, onOp
     val pager = rememberPagerState(initialPage = titles.size * (repeats / 2)) {
         titles.size * repeats
     }
+    PagerScrollHaptics(pager)
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val wheelWidth = maxWidth.coerceAtMost(552.dp)
         val gap = 4.dp
