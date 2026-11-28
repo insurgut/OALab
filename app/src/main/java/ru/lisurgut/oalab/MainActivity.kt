@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
@@ -116,7 +117,9 @@ private fun OALabApp(
     var toYear by remember { mutableStateOf<Int?>(null) }
     var search by remember { mutableStateOf("") }
     var page by remember { mutableIntStateOf(1) }
-    var catalog by remember { mutableStateOf(library.cachedCatalog()) }
+    var homeCatalog by remember { mutableStateOf(library.cachedCatalog()) }
+    var catalog by remember { mutableStateOf(homeCatalog) }
+    val homeState = rememberSaveableStateHolder()
     var loading by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var selectedAnime by remember { mutableStateOf<Anime?>(null) }
@@ -149,8 +152,12 @@ private fun OALabApp(
         try {
             val result = AnimeApi.load(library.catalogProvider, search, category, sorting, page, fromYear, toYear)
             catalog = if (page == 1) result else (catalog + result).distinctBy { it.id }
-            if (page == 1 && search.isBlank() && category == "Все")
+            if (page == 1 && search.isBlank() && category == "Все" &&
+                fromYear == null && toYear == null && sorting == "Популярные"
+            ) {
+                homeCatalog = result
                 library.saveCache(result)
+            }
         } catch (error: Exception) {
             loadError = error.localizedMessage ?: "Каталог временно недоступен"
             if (catalog.isEmpty()) catalog = library.cachedCatalog()
@@ -240,11 +247,13 @@ private fun OALabApp(
                 }
             ) { innerPadding ->
                 when (tab) {
-                    0 -> PlumHomeScreen(
-                        catalog = catalog, library = library, loading = loading, error = loadError,
-                        onOpen = openAnime, onPlay = playOrOpen, onCatalogue = { tab = 1 },
-                        onRetry = { refreshKey++ }
-                    )
+                    0 -> homeState.SaveableStateProvider("home") {
+                        WheelHomeScreen(
+                            modifier = Modifier.padding(innerPadding),
+                            catalog = homeCatalog, library = library, onOpen = openAnime,
+                            onPlay = playOrOpen, onCatalogue = { tab = 1 }
+                        )
+                    }
                     1 -> PlumCatalogScreen(
                         catalog = catalog, library = library, search = search,
                         onSearch = { search = it; page = 1 },

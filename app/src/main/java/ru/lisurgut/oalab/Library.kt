@@ -14,7 +14,8 @@ data class LibraryEntry(
     val status: String = "Не смотрел",
     val favorite: Boolean = false,
     val lastEpisode: Int = 1,
-    val lastPosition: Long = 0L
+    val lastPosition: Long = 0L,
+    val lastPlayedAt: Long = 0L
 ) {
     fun toJson() = JSONObject().apply {
         put("anime", anime.toJson())
@@ -22,6 +23,7 @@ data class LibraryEntry(
         put("favorite", favorite)
         put("lastEpisode", lastEpisode)
         put("lastPosition", lastPosition)
+        put("lastPlayedAt", lastPlayedAt)
     }
     companion object {
         fun parse(value: JSONObject): LibraryEntry = LibraryEntry(
@@ -29,7 +31,8 @@ data class LibraryEntry(
             status = value.optString("status", "Не смотрел"),
             favorite = value.optBoolean("favorite"),
             lastEpisode = value.optInt("lastEpisode", 1),
-            lastPosition = value.optLong("lastPosition", 0L)
+            lastPosition = value.optLong("lastPosition", 0L),
+            lastPlayedAt = value.optLong("lastPlayedAt", 0L)
         )
     }
 }
@@ -127,6 +130,10 @@ class LocalLibrary(private val context: Context) {
     fun inProgress(): List<LibraryEntry> = entries.filter { it.status == "Смотрю" && it.anime.id.startsWith("aniliberty:") }
     fun watched(): List<Anime> = entries.filter { it.status == "Просмотрено" && it.anime.id.startsWith("aniliberty:") }.map { it.anime }
 
+    fun lastInProgress(): LibraryEntry? = inProgress()
+        .filter { it.lastPlayedAt > 0L || it.lastPosition > 0L || it.lastEpisode > 1 }
+        .maxByOrNull { it.lastPlayedAt }
+
     private fun change(anime: Anime, transform: (LibraryEntry) -> LibraryEntry) {
         val index = entries.indexOfFirst { same(it.anime, anime) }
         val before = if (index >= 0) entries[index] else LibraryEntry(anime)
@@ -143,13 +150,16 @@ class LocalLibrary(private val context: Context) {
 
     fun rememberPosition(anime: Anime, episode: Int, position: Long) {
         val before = entry(anime)
+        val now = System.currentTimeMillis()
         if (before?.lastEpisode == episode &&
-            abs(before.lastPosition - position) < 5_000L) return
+            abs(before.lastPosition - position) < 5_000L &&
+            now - before.lastPlayedAt in 0L..<5_000L
+        ) return
         change(anime) {
             it.copy(
                 anime = anime,
                 status = if (it.status == "Не смотрел") "Смотрю" else it.status,
-                lastEpisode = episode, lastPosition = position
+                lastEpisode = episode, lastPosition = position, lastPlayedAt = now
             )
         }
     }
