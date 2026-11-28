@@ -2,6 +2,7 @@ package ru.lisurgut.oalab
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,7 +13,6 @@ import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.graphics.shapes.Morph
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
@@ -141,9 +143,9 @@ fun WheelHomeScreen(
     BoxWithConstraints(modifier.fillMaxSize().background(Ink).statusBarsPadding()) {
         // Schedule starts after the first screen. The wheel stays above the dock.
         val fontScale = LocalDensity.current.fontScale
-        val stageHeight = maxHeight.coerceAtLeast(510.dp + 160.dp * (fontScale - 1f).coerceAtLeast(0f))
+        val stageHeight = maxHeight.coerceAtLeast(560.dp + 160.dp * (fontScale - 1f).coerceAtLeast(0f))
         val wheelHeight = (stageHeight * .30f).coerceIn(164.dp, 228.dp)
-        val cardTop = stageHeight * .30f
+        val cardTop = stageHeight * if (last == null) .30f else .35f
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Box(Modifier.fillMaxWidth().height(stageHeight)) {
                 HomeGlow(Modifier.matchParentSize())
@@ -163,7 +165,7 @@ fun WheelHomeScreen(
                             .data(artwork).crossfade(true).build(),
                         contentDescription = null,
                         modifier = Modifier.align(Alignment.TopCenter).offset(y = 54.dp)
-                            .widthIn(max = 280.dp).fillMaxWidth(.70f).height(cardTop - 50.dp),
+                            .widthIn(max = 340.dp).fillMaxWidth(.84f).height(cardTop - 56.dp),
                         alignment = Alignment.BottomCenter,
                         contentScale = ContentScale.Fit
                     )
@@ -206,7 +208,7 @@ fun WheelHomeScreen(
                                 targetState = picks, animationSpec = tween(260),
                                 label = "Рекомендации на сегодня"
                             ) { titles ->
-                                RecommendationWheel(titles, day, onOpen)
+                                RecommendationWheel(titles, day, round, onOpen)
                             }
                         }
                     }
@@ -316,7 +318,9 @@ private fun HomeGlow(modifier: Modifier) {
 }
 
 @Composable
-private fun RecommendationWheel(titles: List<Anime>, day: Long, onOpen: (Anime) -> Unit) {
+private fun RecommendationWheel(titles: List<Anime>, day: Long, round: Int, onOpen: (Anime) -> Unit) {
+    val silhouettes = remember(day) { recommendationSilhouettes.shuffled(Random(day)) }
+    val shapeCount = silhouettes.size
     val repeats = if (titles.size >= 3) 1_000 else 1
     val pager = rememberPagerState(initialPage = titles.size * (repeats / 2)) {
         titles.size * repeats
@@ -337,17 +341,19 @@ private fun RecommendationWheel(titles: List<Anime>, day: Long, onOpen: (Anime) 
         ) { index ->
             val anime = titles[index % titles.size]
             val seed = day xor anime.id.hashCode().toLong()
-            val style = remember(seed) {
-                val random = Random(seed)
-                random.nextInt(4) to random.nextInt(8)
-            }
+            val color = remember(seed) { Random(seed).nextInt(8) }
+            val shapeIndex = (index % titles.size + round % shapeCount) % shapeCount
+            val startShape = silhouettes[shapeIndex]
+            val endShape = silhouettes[(shapeIndex + 3) % shapeCount]
+            val morph = remember(startShape, endShape) { Morph(startShape, endShape) }
             val scheme = MaterialTheme.colorScheme
             val palette = listOf(
                 Color(0xFF9C99FF), Color(0xFFF5A1CE), Color(0xFF75DBD2), Color(0xFFFFBF7E),
                 Color(0xFFACD389), scheme.primary, scheme.secondary, scheme.tertiary
             )
             WheelTile(
-                anime = anime, hue = palette[style.second], shape = style.first,
+                anime = anime, hue = palette[color], morph = morph,
+                morphProgress = { (2f * abs(pager.currentPageOffsetFraction)).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth().fillMaxHeight(.88f)
                     .graphicsLayer {
                         val distance = (index - pager.currentPage - pager.currentPageOffsetFraction)
@@ -367,16 +373,11 @@ private fun RecommendationWheel(titles: List<Anime>, day: Long, onOpen: (Anime) 
 private fun WheelTile(
     anime: Anime,
     hue: Color,
-    shape: Int,
+    morph: Morph,
+    morphProgress: () -> Float,
     modifier: Modifier,
     onOpen: () -> Unit
 ) {
-    val silhouette = when (shape) {
-        0 -> CircleShape
-        1 -> RoundedCornerShape(26)
-        2 -> RoundedCornerShape(CornerSize(50), CornerSize(50), CornerSize(26), CornerSize(26))
-        else -> RoundedCornerShape(CornerSize(50), CornerSize(26), CornerSize(50), CornerSize(26))
-    }
     BoxWithConstraints(
         modifier.clickable(
             interactionSource = remember { MutableInteractionSource() },
@@ -386,10 +387,26 @@ private fun WheelTile(
     ) {
         val figureSize = minOf(maxWidth * .82f, maxHeight * .61f)
         val posterHeight = minOf(maxHeight * .51f, maxWidth * .87f)
-        Box(
-            Modifier.align(Alignment.TopStart).offset(x = maxWidth * .04f, y = 8.dp)
-                .size(figureSize).background(hue, silhouette)
-        )
+        val outline = remember { Path() }
+        Canvas(
+            Modifier.align(Alignment.TopStart).offset(x = maxWidth * .04f, y = 8.dp).size(figureSize)
+        ) {
+            outline.reset()
+            var start = true
+            morph.forEachCubic(morphProgress()) { cubic ->
+                if (start) {
+                    outline.moveTo(cubic.anchor0X * size.width, cubic.anchor0Y * size.height)
+                    start = false
+                }
+                outline.cubicTo(
+                    cubic.control0X * size.width, cubic.control0Y * size.height,
+                    cubic.control1X * size.width, cubic.control1Y * size.height,
+                    cubic.anchor1X * size.width, cubic.anchor1Y * size.height
+                )
+            }
+            outline.close()
+            drawPath(outline, color = hue)
+        }
         Cover(
             anime.cover,
             Modifier.align(Alignment.TopEnd)
