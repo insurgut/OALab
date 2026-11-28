@@ -28,7 +28,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -37,11 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.graphics.shapes.Morph
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import java.io.File
 import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.random.Random
@@ -130,9 +126,8 @@ fun WheelHomeScreen(
     val last = library.lastInProgress()
     val anime = last?.anime
     val context = LocalContext.current
-    var artwork by remember(anime?.id) { mutableStateOf<File?>(null) }
-    LaunchedEffect(anime) {
-        if (anime != null) artwork = HomeCharacterArtwork.load(context, anime)
+    LaunchedEffect(context) {
+        HomeCharactersData.clearRetiredArtwork(context)
     }
 
     val positionMs = last?.let {
@@ -145,7 +140,7 @@ fun WheelHomeScreen(
         val fontScale = LocalDensity.current.fontScale
         val stageHeight = maxHeight.coerceAtLeast(560.dp + 160.dp * (fontScale - 1f).coerceAtLeast(0f))
         val wheelHeight = (stageHeight * .30f).coerceIn(164.dp, 228.dp)
-        val cardTop = stageHeight * if (last == null) .30f else .35f
+        val watchTop = if (last == null) stageHeight * .30f else (stageHeight * .16f).coerceAtLeast(72.dp)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Box(Modifier.fillMaxWidth().height(stageHeight)) {
                 HomeGlow(Modifier.matchParentSize())
@@ -159,25 +154,16 @@ fun WheelHomeScreen(
                         Icon(Icons.Rounded.Search, "Поиск аниме", tint = Paper)
                     }
                 }
-                if (artwork != null) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(artwork).crossfade(true).build(),
-                        contentDescription = null,
-                        modifier = Modifier.align(Alignment.TopCenter).offset(y = 54.dp)
-                            .widthIn(max = 340.dp).fillMaxWidth(.84f).height(cardTop - 56.dp),
-                        alignment = Alignment.BottomCenter,
-                        contentScale = ContentScale.Fit
+                Column(Modifier.fillMaxWidth().offset(y = watchTop)) {
+                    if (anime != null) HomeCharacterStrip(anime)
+                    ContinueWatchingCard(
+                        entry = last,
+                        positionMs = positionMs,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                        onPlay = onPlay,
+                        onCatalogue = onCatalogue
                     )
                 }
-                ContinueWatchingCard(
-                    entry = last,
-                    positionMs = positionMs,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)
-                        .offset(y = cardTop),
-                    onPlay = onPlay,
-                    onCatalogue = onCatalogue
-                )
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                     Row(
                         Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp),
