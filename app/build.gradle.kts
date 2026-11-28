@@ -22,8 +22,8 @@ android {
         applicationId = "ru.lisurgut.oalab"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.7.5"
+        versionCode = 23
+        versionName = "0.7.6"
     }
     if (stableSigningEnabled) {
         signingConfigs {
@@ -71,6 +71,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.11.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.11.1")

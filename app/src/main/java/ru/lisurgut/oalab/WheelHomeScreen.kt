@@ -2,16 +2,17 @@ package ru.lisurgut.oalab
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,28 +23,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import java.io.File
 import java.time.LocalDate
-import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.random.Random
 
 private const val RecommendationsPerRound = 6
@@ -127,17 +125,28 @@ fun WheelHomeScreen(
         savedRound = if (round == Int.MAX_VALUE) 0 else round + 1
     }
 
+    val last = library.lastInProgress()
+    val anime = last?.anime
+    val context = LocalContext.current
+    var artwork by remember(anime?.id) { mutableStateOf<File?>(null) }
+    LaunchedEffect(anime) {
+        if (anime != null) artwork = HomeCharacterArtwork.load(context, anime)
+    }
+
+    val positionMs = last?.let {
+        library.episodePosition(it.anime, it.lastEpisode)
+            .takeIf { position -> position > 0L } ?: it.lastPosition
+    } ?: 0L
+
     BoxWithConstraints(modifier.fillMaxSize().background(Ink).statusBarsPadding()) {
         // Schedule starts after the first screen. The wheel stays above the dock.
         val fontScale = LocalDensity.current.fontScale
         val stageHeight = maxHeight.coerceAtLeast(510.dp + 160.dp * (fontScale - 1f).coerceAtLeast(0f))
         val wheelHeight = (stageHeight * .30f).coerceIn(164.dp, 228.dp)
+        val cardTop = stageHeight * .30f
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Box(Modifier.fillMaxWidth().height(stageHeight)) {
-                HomeGlow(
-                    modifier = Modifier.fillMaxWidth().height(stageHeight * .62f),
-                    hue = MaterialTheme.colorScheme.primary
-                )
+                HomeGlow(Modifier.matchParentSize())
                 Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp)) {
                     Text(
                         "OA Lab", Modifier.align(Alignment.Center), color = Paper,
@@ -148,15 +157,22 @@ fun WheelHomeScreen(
                         Icon(Icons.Rounded.Search, "Поиск аниме", tint = Paper)
                     }
                 }
-                val last = library.lastInProgress()
+                if (artwork != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(artwork).crossfade(true).build(),
+                        contentDescription = null,
+                        modifier = Modifier.align(Alignment.TopCenter).offset(y = 54.dp)
+                            .widthIn(max = 280.dp).fillMaxWidth(.70f).height(cardTop - 50.dp),
+                        alignment = Alignment.BottomCenter,
+                        contentScale = ContentScale.Fit
+                    )
+                }
                 ContinueWatchingCard(
                     entry = last,
-                    positionMs = last?.let {
-                        library.episodePosition(it.anime, it.lastEpisode)
-                            .takeIf { position -> position > 0L } ?: it.lastPosition
-                    } ?: 0L,
+                    positionMs = positionMs,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)
-                        .offset(y = stageHeight * .30f),
+                        .offset(y = cardTop),
                     onPlay = onPlay,
                     onCatalogue = onCatalogue
                 )
@@ -282,33 +298,21 @@ private fun ContinueWatchingCard(
 }
 
 @Composable
-private fun HomeGlow(modifier: Modifier, hue: Color) {
-    val scheme = MaterialTheme.colorScheme
-    val light = scheme.background.luminance() > .5f
-    Canvas(modifier) {
-        drawRect(
+private fun HomeGlow(modifier: Modifier) {
+    val color = MaterialTheme.colorScheme.primary
+    val pale = Ink.luminance() > .5f
+    Box(
+        modifier.background(
             Brush.verticalGradient(
-                0f to hue.copy(alpha = if (light) .16f else .24f),
-                .42f to hue.copy(alpha = .07f),
+                0f to color.copy(alpha = if (pale) .12f else .22f),
+                .22f to color.copy(alpha = if (pale) .16f else .28f),
+                .48f to color.copy(alpha = if (pale) .09f else .14f),
+                .65f to color.copy(alpha = if (pale) .025f else .04f),
+                .80f to Color.Transparent,
                 1f to Color.Transparent
             )
         )
-        val center = Offset(size.width * .54f, size.height * .49f)
-        val radius = maxOf(size.width, size.height) * .65f
-        drawRect(
-            Brush.radialGradient(
-                listOf(hue.copy(alpha = if (light) .24f else .35f),
-                    hue.copy(alpha = .11f), Color.Transparent),
-                center = center, radius = radius
-            )
-        )
-        drawRect(
-            Brush.radialGradient(
-                listOf(scheme.tertiary.copy(alpha = .17f), Color.Transparent),
-                center = Offset(size.width * .18f, size.height * .44f), radius = radius * .77f
-            )
-        )
-    }
+    )
 }
 
 @Composable
@@ -317,23 +321,25 @@ private fun RecommendationWheel(titles: List<Anime>, day: Long, onOpen: (Anime) 
     val pager = rememberPagerState(initialPage = titles.size * (repeats / 2)) {
         titles.size * repeats
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val pageWidth = (maxWidth * .39f).coerceIn(112.dp, 180.dp)
-        val sidePadding = (maxWidth - pageWidth) / 2
-        val drop = with(LocalDensity.current) { (maxHeight * .19f).toPx() }
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val wheelWidth = maxWidth.coerceAtMost(552.dp)
+        val gap = 4.dp
+        val pageWidth = (wheelWidth - gap * 2) / 3
+        val sidePadding = (wheelWidth - pageWidth) / 2
+        val drop = with(LocalDensity.current) { (maxHeight * .09f).toPx() }
         HorizontalPager(
             state = pager,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.width(wheelWidth).fillMaxHeight(),
             pageSize = PageSize.Fixed(pageWidth),
             contentPadding = PaddingValues(horizontal = sidePadding),
-            pageSpacing = 4.dp,
+            pageSpacing = gap,
             key = { "${it / titles.size}:${titles[it % titles.size].id}" }
         ) { index ->
             val anime = titles[index % titles.size]
             val seed = day xor anime.id.hashCode().toLong()
             val style = remember(seed) {
                 val random = Random(seed)
-                random.nextInt(6) to random.nextInt(8)
+                random.nextInt(4) to random.nextInt(8)
             }
             val scheme = MaterialTheme.colorScheme
             val palette = listOf(
@@ -348,7 +354,6 @@ private fun RecommendationWheel(titles: List<Anime>, day: Long, onOpen: (Anime) 
                             .coerceIn(-2f, 2f)
                         val edge = abs(distance).coerceAtMost(1.4f)
                         translationY = drop * edge
-                        rotationZ = distance * 8f
                         scaleX = 1f - edge * .12f
                         scaleY = scaleX
                     },
@@ -366,76 +371,37 @@ private fun WheelTile(
     modifier: Modifier,
     onOpen: () -> Unit
 ) {
-    Box(
-        modifier.clip(RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onOpen)
+    val silhouette = when (shape) {
+        0 -> CircleShape
+        1 -> RoundedCornerShape(26)
+        2 -> RoundedCornerShape(CornerSize(50), CornerSize(50), CornerSize(26), CornerSize(26))
+        else -> RoundedCornerShape(CornerSize(50), CornerSize(26), CornerSize(50), CornerSize(26))
+    }
+    BoxWithConstraints(
+        modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null, role = Role.Button, onClick = onOpen
+        ),
+        contentAlignment = Alignment.TopCenter
     ) {
-        val backdrop = Ink
-        val deep = lerp(hue, Color(0xFF24223E), .68f)
-        val (lobes, depth) = remember(shape) {
-            listOf(5 to .17f, 4 to .21f, 7 to .10f, 3 to .21f, 8 to .14f, 2 to .22f)[shape]
-        }
-        Canvas(Modifier.fillMaxSize()) {
-            val center = Offset(size.width * .41f, size.height * .37f)
-            val radius = minOf(size.width * .38f, size.height * .33f)
-            val form = Path().apply {
-                for (step in 0 until 144) {
-                    val angle = (step * PI / 72 - PI / 2).toFloat()
-                    val r = radius * (1f + depth * cos(angle * lobes + PI.toFloat() / 2))
-                    val x = center.x + cos(angle) * r
-                    val y = center.y + sin(angle) * r
-                    if (step == 0) moveTo(x, y) else lineTo(x, y)
-                }
-                close()
-            }
-            val glow = Offset(size.width * .46f, size.height * .53f)
-            drawRect(
-                Brush.radialGradient(
-                    listOf(hue.copy(alpha = .42f), hue.copy(alpha = .13f), Color.Transparent),
-                    center = glow, radius = size.width * .62f
-                )
-            )
-            val ovalTop = size.height * .31f
-            val ovalOrigin = Offset(size.width * .09f, ovalTop)
-            val ovalSize = Size(size.width * .82f, size.height * .68f)
-            drawOval(
-                brush = Brush.verticalGradient(
-                    0f to hue.copy(alpha = .55f), .55f to deep.copy(alpha = .38f),
-                    1f to Color.Transparent, startY = ovalTop, endY = size.height
-                ),
-                topLeft = ovalOrigin, size = ovalSize
-            )
-            drawOval(
-                brush = Brush.verticalGradient(
-                    0f to hue.copy(alpha = .70f), .66f to Color.Transparent,
-                    endY = size.height
-                ),
-                topLeft = ovalOrigin, size = ovalSize, style = Stroke(width = 1.dp.toPx())
-            )
-            drawPath(
-                form, Brush.linearGradient(
-                    listOf(lerp(hue, Color.White, .30f), hue, deep),
-                    start = Offset.Zero, end = Offset(size.width * .84f, size.height * .76f)
-                )
-            )
-        }
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val posterHeight = maxHeight * .51f
-            Cover(
-                anime.cover,
-                Modifier.align(Alignment.TopEnd)
-                    .padding(top = maxHeight * .21f, end = maxWidth * .10f)
-                    .height(posterHeight).width(posterHeight * .72f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(1.dp, hue.copy(alpha = .62f), RoundedCornerShape(10.dp))
-            )
-        }
+        val figureSize = minOf(maxWidth * .82f, maxHeight * .61f)
+        val posterHeight = minOf(maxHeight * .51f, maxWidth * .87f)
+        Box(
+            Modifier.align(Alignment.TopStart).offset(x = maxWidth * .04f, y = 8.dp)
+                .size(figureSize).background(hue, silhouette)
+        )
+        Cover(
+            anime.cover,
+            Modifier.align(Alignment.TopEnd)
+                .padding(top = maxHeight * .22f, end = maxWidth * .05f)
+                .height(posterHeight).width(posterHeight * .72f)
+                .clip(RoundedCornerShape(10.dp))
+        )
         Text(
             anime.title, color = Paper, fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.82f)
-                .padding(end = 5.dp)
-                .background(backdrop.copy(alpha = .92f), RoundedCornerShape(9.dp))
-                .padding(horizontal = 6.dp, vertical = 3.dp)
+            fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
 }
