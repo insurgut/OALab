@@ -22,8 +22,8 @@ android {
         applicationId = "ru.lisurgut.oalab"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.7.6"
+        versionCode = 24
+        versionName = "0.7.7"
     }
     if (stableSigningEnabled) {
         signingConfigs {
@@ -64,6 +64,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.graphics:graphics-shapes:1.0.1")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")

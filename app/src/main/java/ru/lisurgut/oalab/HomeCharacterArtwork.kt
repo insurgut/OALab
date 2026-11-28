@@ -35,12 +35,17 @@ import kotlin.math.roundToInt
 
 internal object HomeCharacterArtwork {
     private const val Catalog = "https://api.tenrai.org/v1"
+    // BiRefNext AniSeg by nkta, distributed by its author under the DINOv3 license.
     private const val ModelUrl =
-        "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx"
-    private const val ModelBytes = 176_069_933L
-    private const val ModelSha256 = "f15622d853e8260172812b657053460e20806f04b9e05147d49af7bed31a6e99"
-    private const val ModelSize = 1024
-    private const val InferenceMemoryBytes = 1_250_000_000L
+        "https://huggingface.co/nkta/birefnext-aniseg-ONNX/resolve/main/birefnext-aniseg-int8-v0.1.onnx"
+    private const val ModelBytes = 117_239_813L
+    private const val ModelSha256 = "75642769ce491b9d76e2cd2506c9b4e26852f7e0c0a09f438c965a233de094d5"
+    private const val ModelMaxEdge = 512
+    private const val InferenceMemoryBytes = 1_000_000_000L
+    private const val PortraitCdn = "https://cdn.myanimelist.net/images/characters/"
+    private val officialArtwork = mapOf(
+        60732 to "https://mizuzokusei-anime.com/assets/images/character/character-ryo-v2.png"
+    )
     private const val RetryAfterMs = 10 * 60 * 1000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -54,14 +59,8 @@ internal object HomeCharacterArtwork {
         if (release.toIntOrNull() == null) return null
         val app = context.applicationContext
         val directory = File(app.cacheDir, "home-characters")
-        val output = File(directory, "isnet-v1-$release.png")
+        val output = File(directory, "silhouette-v2-$release.png")
         if (output.isFile) return output
-        val activityManager = app.getSystemService(ActivityManager::class.java) ?: return null
-        val memory = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
-        if (Build.SUPPORTED_64_BIT_ABIS.isEmpty() || activityManager.isLowRamDevice ||
-            memory.availMem < InferenceMemoryBytes
-        ) return null
-
         val task = synchronized(guard) {
             val now = SystemClock.elapsedRealtime()
             failedAt.entries.removeAll { now - it.value >= RetryAfterMs }
@@ -91,17 +90,23 @@ internal object HomeCharacterArtwork {
 
     private fun render(context: Context, anime: Anime, output: File): File? {
         val titleId = anime.malId.takeIf { it > 0 } ?: matchTitle(anime) ?: return null
-        val candidates = get("$Catalog/anime/$titleId/characters")
-            .objects()
-            .sortedWith(
-                compareByDescending<JSONObject> { it.optString("role") == "Main" }
-                    .thenByDescending { it.optInt("favorites") }
-            )
-            .mapNotNull {
-                it.optJSONObject("character")?.optJSONObject("images")
-                    ?.optJSONObject("jpg")?.optString("image_url")
-                    ?.takeIf { url -> url.startsWith("https://cdn.myanimelist.net/images/characters/") }
-            }.distinct().take(3)
+        officialArtwork[titleId]?.let { url ->
+            readPortrait(url)?.let { portrait ->
+                try {
+                    if (portrait.hasAlpha()) return save(output, portrait)
+                } finally {
+                    portrait.recycle()
+                }
+            }
+        }
+
+        val activityManager = context.getSystemService(ActivityManager::class.java) ?: return null
+        val memory = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
+        if (Build.SUPPORTED_64_BIT_ABIS.isEmpty() || activityManager.isLowRamDevice ||
+            memory.availMem < InferenceMemoryBytes
+        ) return null
+
+        val candidates = portraitCandidates(titleId)
         if (candidates.isEmpty()) return null
         val env = OrtEnvironment.getEnvironment()
         val options = OrtSession.SessionOptions()
@@ -127,6 +132,33 @@ internal object HomeCharacterArtwork {
         }
         return null
     }
+
+    private fun portraitCandidates(titleId: Int): List<String> =
+        get("$Catalog/anime/$titleId/characters")
+            .objects()
+            .sortedWith(
+                compareByDescending<JSONObject> { it.optString("role") == "Main" }
+                    .thenByDescending { it.optInt("favorites") }
+            )
+            .mapNotNull { it.optJSONObject("character") }
+            .take(2)
+            .flatMap { character ->
+                val id = character.optInt("mal_id")
+                val gallery = if (id > 0) {
+                    try {
+                        get("$Catalog/characters/$id/pictures").objects()
+                            .mapNotNull { it.optJSONObject("jpg")?.optString("image_url") }
+                    } catch (_: IOException) {
+                        emptyList()
+                    }
+                } else {
+                    emptyList()
+                }
+                val portrait = character.optJSONObject("images")
+                    ?.optJSONObject("jpg")?.optString("image_url")
+                (gallery.filter { it != portrait } + listOfNotNull(portrait))
+                    .filter { it.startsWith(PortraitCdn) }.distinct().take(4)
+            }.distinct()
 
     private fun matchTitle(anime: Anime): Int? {
         val queries = listOf(anime.originalTitle, anime.title).filter { it.isNotBlank() }.distinct()
@@ -199,9 +231,9 @@ internal object HomeCharacterArtwork {
 
     private fun modelFile(context: Context): File {
         val dir = File(context.filesDir, "home-model").apply { mkdirs() }
-        val model = File(dir, "isnet-anime.onnx")
+        val model = File(dir, "birefnext-aniseg.onnx")
         if (model.isFile && model.length() == ModelBytes) return model
-        val temp = File(dir, "isnet-anime.download")
+        val temp = File(dir, "birefnext-aniseg.download")
         val digest = MessageDigest.getInstance("SHA-256")
         try {
             fetch(ModelUrl) { stream ->
@@ -222,6 +254,7 @@ internal object HomeCharacterArtwork {
             }
             check(digest.digest().joinToString("") { "%02x".format(it) } == ModelSha256)
             check(temp.renameTo(model))
+            File(dir, "isnet-anime.onnx").delete()
         } finally {
             temp.delete()
         }
@@ -229,40 +262,40 @@ internal object HomeCharacterArtwork {
     }
 
     private fun segment(env: OrtEnvironment, session: OrtSession, portrait: Bitmap): Bitmap? {
-        val plane = ModelSize * ModelSize
+        val scale = ModelMaxEdge.toFloat() / maxOf(portrait.width, portrait.height)
+        val width = (portrait.width * scale / 32).roundToInt().coerceAtLeast(2) * 32
+        val height = (portrait.height * scale / 32).roundToInt().coerceAtLeast(2) * 32
+        val plane = width * height
         val pixels = IntArray(plane)
-        val input = Bitmap.createScaledBitmap(portrait, ModelSize, ModelSize, true)
-        input.getPixels(pixels, 0, ModelSize, 0, 0, ModelSize, ModelSize)
-        if (input !== portrait) input.recycle()
-
-        // ISNet Anime uses the maximum input sample and ImageNet RGB means, as in rembg.
-        var maxSample = 1
-        for (color in pixels) {
-            maxSample = maxOf(maxSample, maxOf(Color.red(color), Color.green(color), Color.blue(color)))
+        val input = Bitmap.createScaledBitmap(portrait, width, height, true)
+        try {
+            input.getPixels(pixels, 0, width, 0, 0, width, height)
+        } finally {
+            if (input !== portrait) input.recycle()
         }
+
         val tensor = FloatArray(plane * 3)
         for (i in pixels.indices) {
             val color = pixels[i]
-            tensor[i] = Color.red(color).toFloat() / maxSample - .485f
-            tensor[plane + i] = Color.green(color).toFloat() / maxSample - .456f
-            tensor[2 * plane + i] = Color.blue(color).toFloat() / maxSample - .406f
+            tensor[i] = (Color.red(color) / 255f - .485f) / .229f
+            tensor[plane + i] = (Color.green(color) / 255f - .456f) / .224f
+            tensor[2 * plane + i] = (Color.blue(color) / 255f - .406f) / .225f
         }
 
-        val shape = longArrayOf(1, 3, ModelSize.toLong(), ModelSize.toLong())
+        val shape = longArrayOf(1, 3, height.toLong(), width.toLong())
         val inputName = session.inputNames.single()
-        val maskName = session.outputNames.first()
+        val maskName = session.outputNames.single()
         val mask = OnnxTensor.createTensor(env, FloatBuffer.wrap(tensor), shape).use { value ->
             session.run(mapOf(inputName to value), setOf(maskName)).use { result ->
                 FloatArray(plane).also { (result[0] as OnnxTensor).floatBuffer.get(it) }
             }
         }
-        val min = mask.minOrNull() ?: return null
-        val span = (mask.maxOrNull() ?: return null) - min
-        if (!span.isFinite() || span <= .00001f) return null
+        if (mask.any { !it.isFinite() }) return null
         for (i in mask.indices) {
-            pixels[i] = Color.argb((((mask[i] - min) / span) * 255).roundToInt(), 255, 255, 255)
+            val opacity = (((mask[i] - .06f) / .88f).coerceIn(0f, 1f) * 255f).roundToInt()
+            pixels[i] = Color.argb(opacity, 255, 255, 255)
         }
-        val matte = Bitmap.createBitmap(pixels, ModelSize, ModelSize, Bitmap.Config.ARGB_8888)
+        val matte = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
         return try {
             applyMatte(portrait, matte)
         } finally {
@@ -273,35 +306,22 @@ internal object HomeCharacterArtwork {
     private fun applyMatte(portrait: Bitmap, matte: Bitmap): Bitmap? {
         val width = portrait.width
         val height = portrait.height
-        val croppedMask = Bitmap.createScaledBitmap(matte, width, height, true)
-        val colors = IntArray(width * height)
-        val alpha = IntArray(colors.size)
-        portrait.getPixels(colors, 0, width, 0, 0, width, height)
-        croppedMask.getPixels(alpha, 0, width, 0, 0, width, height)
-        if (croppedMask !== matte) croppedMask.recycle()
-
-        var left = width
-        var right = -1
-        var top = height
-        var bottom = -1
-        var foreground = 0
-        for (index in colors.indices) {
-            val opacity = Color.alpha(alpha[index])
-            colors[index] = (colors[index] and 0x00FFFFFF) or (opacity shl 24)
-            if (opacity >= 32) {
-                val x = index % width
-                val y = index / width
-                left = minOf(left, x)
-                right = maxOf(right, x)
-                top = minOf(top, y)
-                bottom = maxOf(bottom, y)
-            }
-            if (opacity >= 128) foreground++
+        val scaledMask = Bitmap.createScaledBitmap(matte, width, height, true)
+        val alpha = IntArray(width * height)
+        try {
+            scaledMask.getPixels(alpha, 0, width, 0, 0, width, height)
+        } finally {
+            if (scaledMask !== matte) scaledMask.recycle()
         }
-        if (foreground.toFloat() / colors.size !in 0.04f..0.985f) return null
+        val bounds = visiblePortrait(alpha, width, height) ?: return null
+        val colors = IntArray(alpha.size)
+        portrait.getPixels(colors, 0, width, 0, 0, width, height)
+        for (i in colors.indices) {
+            colors[i] = (colors[i] and 0x00FFFFFF) or (alpha[i] and 0xFF000000.toInt())
+        }
         return Bitmap.createBitmap(
-            colors, top * width + left, width, right - left + 1, bottom - top + 1,
-            Bitmap.Config.ARGB_8888
+            colors, bounds.top * width + bounds.left, width,
+            bounds.right - bounds.left, bounds.bottom - bounds.top, Bitmap.Config.ARGB_8888
         )
     }
 
